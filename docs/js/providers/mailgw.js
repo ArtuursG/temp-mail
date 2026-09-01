@@ -12,6 +12,7 @@ export const mailgw = {
   label: "Mail.gw",
   pollInterval: 4000,
   retention: "7 days", // mail.tm/mail.gw: "We store messages for 7 days only"
+  retentionKey: "dur.7d",
   retentionSeconds: 7 * 24 * 3600,
 
   async domains() {

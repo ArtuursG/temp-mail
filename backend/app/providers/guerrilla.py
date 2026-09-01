@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import re
 import secrets
 import string
 from datetime import datetime, timezone
@@ -97,7 +98,14 @@ class GuerrillaProvider(Provider):
         if not data.get("mail_id"):
             raise ProviderError(f"{self.label}: vēstule neatrasta")
         body = data.get("mail_body", "") or ""
-        is_html = data.get("content_type") != "text" and "<" in body and ">" in body
+        # Guerrilla's content_type is unreliable - decide from the body itself.
+        is_html = data.get("content_type") == "html" or bool(
+            re.search(
+                r"<(?:pre|a|p|div|br|table|img|h[1-6]|ul|ol|li|span|strong|b|i|em|font|hr|body|html)[\s/>]",
+                body,
+                re.I,
+            )
+        )
         return MessageFull(
             id=str(data["mail_id"]),
             from_addr=data.get("mail_from", ""),

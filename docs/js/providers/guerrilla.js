@@ -29,6 +29,7 @@ export const guerrilla = {
   label: "Guerrilla Mail",
   pollInterval: 8000,
   retention: "1 hour", // Guerrilla: "All Emails are deleted after 1 hour"
+  retentionKey: "dur.1h",
   retentionSeconds: 3600,
 
   async domains() {
@@ -76,7 +77,13 @@ export const guerrilla = {
     const d = await call({ f: "fetch_email", email_id: id, sid_token: session.sid_token });
     if (!d || !d.mail_id) throw new Error("Guerrilla Mail: message not found");
     const body = d.mail_body || "";
-    const isHtml = d.content_type !== "text" && /<[a-z][\s\S]*>/i.test(body);
+    // Guerrilla's content_type is unreliable (its own welcome mail is "text" but
+    // wrapped in <pre> with HTML entities) - decide from the body itself.
+    const isHtml =
+      d.content_type === "html" ||
+      /<(?:pre|a|p|div|br|table|tbody|tr|td|img|h[1-6]|ul|ol|li|span|strong|b|i|em|blockquote|font|hr|body|html)[\s/>]/i.test(
+        body
+      );
     return {
       id: String(d.mail_id),
       from: d.mail_from || "",
