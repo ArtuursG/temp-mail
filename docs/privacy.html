@@ -21,79 +21,50 @@
         <span class="tagline">Disposable mail terminal</span>
       </div>
       <span class="hdr-rule"></span>
-      <a class="tab" href="./index.html">Back to inbox</a>
+      <a class="tab" href="./index.html" data-i18n="legal.back">Back to inbox</a>
+      <div class="hdr-right">
+        <label class="sr-label" for="lang" data-i18n="lang.label">Language</label>
+        <select id="lang" class="mono-select"></select>
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Theme">☀</button>
+      </div>
     </header>
 
     <section class="panel about tm-scroll">
       <div class="about-inner legal">
-        <span class="kicker">Privacy</span>
-        <h1>Privacy</h1>
-        <p class="p-lg muted">
-          Tempmail is a static page. It has no backend of its own, no database, and no
-          user accounts. This document describes what the page does and does not do
-          with data. Last updated 2026-08-28.
-        </p>
+        <span class="kicker" data-i18n="privacy.kicker">Privacy</span>
+        <h1 data-i18n="privacy.title">Privacy</h1>
+        <p class="p-lg muted" data-i18n="privacy.intro"></p>
 
-        <h2>What stays in your browser</h2>
-        <p>
-          Your current temporary address, the provider session token, and your
-          language and theme choice are kept in this browser's <code>localStorage</code>.
-          They never leave your device through this page. Clearing site data, or
-          pressing <strong>Burn it</strong>, removes them.
-        </p>
+        <h2 data-i18n="privacy.s1t"></h2>
+        <p data-i18n="privacy.s1b"></p>
 
-        <h2>What goes to third parties</h2>
-        <p>
-          Mail is fetched directly by your browser from the disposable-mail provider
-          you select - <a href="https://mail.gw" target="_blank" rel="noopener">Mail.gw</a>
-          or <a href="https://www.guerrillamail.com" target="_blank" rel="noopener">Guerrilla Mail</a>.
-          Those requests carry your IP address and browser headers to that provider,
-          and the provider stores the messages sent to your address. Their privacy
-          policies and retention rules apply to that data, not this page's. Fonts are
-          served from this page's own files - no third-party font request.
-        </p>
+        <h2 data-i18n="privacy.s2t"></h2>
+        <p data-i18n="privacy.s2b"></p>
 
-        <h2>What this page does not do</h2>
-        <p>
-          No analytics, no tracking pixels, no advertising, no cookies set by this
-          page, and nothing is sent to a server operated by whoever runs this copy of
-          Tempmail. There is no server to send it to.
-        </p>
-        <p>
-          A Content-Security-Policy limits network access to the two mail APIs only,
-          scripts to this page's own files, and a <code>no-referrer</code> policy
-          keeps the page URL out of every outbound request. Opened messages render
-          in a sandboxed frame with a stricter policy that blocks remote images
-          (tracking pixels), scripts and web fonts.
-        </p>
+        <h2 data-i18n="privacy.s3t"></h2>
+        <p data-i18n="privacy.s3b"></p>
+        <p data-i18n="privacy.s3c"></p>
 
-        <h2>Notifications</h2>
-        <p>
-          Desktop notifications are optional and off by default. If you enable them,
-          the permission is managed by your browser and can be revoked there at any
-          time. Notification text (sender and subject) is shown only on your device.
-        </p>
+        <h2 data-i18n="privacy.s4t"></h2>
+        <p data-i18n="privacy.s4b"></p>
 
-        <h2>Anonymity is limited</h2>
-        <p>
-          A temporary inbox is not full anonymity. The provider can see your IP,
-          some sites block known disposable domains, and anyone with access to this
-          browser session can read whatever is in the inbox. Never use a temporary
-          address for anything private, valuable, or tied to your identity.
-        </p>
+        <h2 data-i18n="privacy.s5t"></h2>
+        <p data-i18n="privacy.s5b"></p>
 
         <div class="about-cta">
-          <a class="btn-solid lg" href="./index.html">Back to inbox</a>
-          <a class="kicker" href="./terms.html">Read the terms</a>
+          <a class="btn-solid lg" href="./index.html" data-i18n="legal.back">Back to inbox</a>
+          <a class="kicker" href="./terms.html" data-i18n="privacy.readTerms">Read the terms</a>
         </div>
       </div>
     </section>
 
     <div class="foot-note mono">
-      <span>Static client - public disposable-mail APIs</span>
+      <span data-i18n="foot.line1">Static client - public disposable-mail APIs</span>
       <span class="sep">/</span>
-      <span>Never use a temporary address for anything private</span>
+      <span data-i18n="foot.line2">Never use a temporary address for anything private</span>
     </div>
   </div>
+
+  <script type="module" src="./js/legal.js"></script>
 </body>
 </html>
