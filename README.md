@@ -49,8 +49,10 @@ the tab is hidden. The inbox (address + session token) is kept in `localStorage`
 so a refresh keeps your mail.
 
 Adding a provider = one file in [`docs/js/providers/`](docs/js/providers/) exporting
-`{ id, label, pollInterval, retention, createInbox, listMessages, getMessage, destroy }`,
-then listing it in `providers/index.js`.
+`{ id, label, pollInterval, retention, retentionSeconds, createInbox(opts),
+listMessages, getMessage, destroy }` plus optional `domains()`,
+`deleteMessage(session, id)`, `downloadAttachment(session, att)`; then list it in
+`providers/index.js`.
 
 ---
 
@@ -61,18 +63,22 @@ accent, uppercase mono labels. Layout: header (wordmark / status / theme / lang 
 alerts), two tabs, address strip with a live expiry countdown + bar, toolbar,
 then a message-list / reader split.
 
+* **Fonts** - self-hosted woff2 in [`docs/fonts/`](docs/fonts/) via
+  [`docs/css/fonts.css`](docs/css/fonts.css); no request to Google.
 * **Theme** ([`docs/js/theme.js`](docs/js/theme.js)) - two buttons, **Light** /
   **Dark**. First visit follows the OS setting; the choice is then stored and
   applied as `data-theme` on `<html>` before first paint. Both palettes are full
   token sets under `:root[data-theme="..."]` in [`docs/css/style.css`](docs/css/style.css).
 * **Languages** ([`docs/js/i18n.js`](docs/js/i18n.js)) - `en`, `lv`, `de`, `es`
-  (93 keys each). Static text uses `data-i18n` / `data-i18n-title`; dynamic
-  strings go through `t(key, vars)`. Add a language = one dictionary + a
-  `LANGUAGES` entry.
+  (100 keys each). Static text uses `data-i18n` / `data-i18n-title`; dynamic
+  strings go through `t(key, vars)`.
 * **Tabs**: **Inbox** and **What is temp mail** (about + FAQ accordion).
-* **Extras**: verification-code detection (shows the OTP in a copy box),
-  attachment chips with download (Mail.gw), sandboxed HTML rendering, desktop
-  notifications, expiry countdown from `provider.retentionSeconds`.
+* **Features**: verification-code detection (scans plain text *and* HTML bodies,
+  shows the OTP in a copy box); attachment chips with download (Mail.gw);
+  HTML mail in a sandboxed iframe with a CSP that blocks remote images / scripts /
+  beacons; per-message delete; pick-your-own address name (**Edit**);
+  expiry countdown from `provider.retentionSeconds`; desktop notifications;
+  polling backs off to 20 s when a provider returns HTTP 429; `aria-live` status.
 
 ---
 

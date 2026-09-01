@@ -31,16 +31,21 @@ export const guerrilla = {
   retention: "1 hour", // Guerrilla: "All Emails are deleted after 1 hour"
   retentionSeconds: 3600,
 
-  async createInbox() {
+  async domains() {
+    return ["guerrillamailblock.com"];
+  },
+
+  async createInbox(opts = {}) {
     const init = await call({ f: "get_email_address" });
     let sid = init.sid_token;
     let address = init.email_addr;
+    const user =
+      String(opts.localPart || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]/g, "")
+        .slice(0, 32) || randomString(8, 12);
     try {
-      const set = await call({
-        f: "set_email_user",
-        email_user: randomString(8, 12),
-        sid_token: sid,
-      });
+      const set = await call({ f: "set_email_user", email_user: user, sid_token: sid });
       sid = set.sid_token || sid;
       address = set.email_addr || address;
     } catch {
@@ -81,6 +86,14 @@ export const guerrilla = {
       text: isHtml ? "" : body,
       html: isHtml ? body : "",
     };
+  },
+
+  async deleteMessage(session, id) {
+    await call({
+      f: "del_email",
+      "email_ids[]": id,
+      sid_token: session.sid_token,
+    });
   },
 
   async destroy() {

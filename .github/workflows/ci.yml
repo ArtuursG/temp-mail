@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: JS syntax
+        run: |
+          for f in $(find docs/js -name '*.js'); do node --check "$f"; done
+
+      - name: i18n key parity
+        run: node scripts/check-i18n.mjs
+
+      - name: no em-dash / arrow characters
+        run: |
+          if grep -rlP "[\x{2192}\x{2190}\x{2014}]" docs README.md; then
+            echo "found forbidden dash/arrow characters"; exit 1
+          fi

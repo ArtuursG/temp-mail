@@ -14,19 +14,25 @@ export const mailgw = {
   retention: "7 days", // mail.tm/mail.gw: "We store messages for 7 days only"
   retentionSeconds: 7 * 24 * 3600,
 
-  async createInbox() {
-    const domainsResp = await jfetch(`${BASE}/domains?page=1`);
-    const domains = (domainsResp["hydra:member"] || []).filter(
-      (d) => d.isActive && !d.isPrivate
-    );
-    if (!domains.length) throw new Error("Mail.gw: no active domains");
-    const domain = pick(domains).domain;
+  async domains() {
+    const resp = await jfetch(`${BASE}/domains?page=1`);
+    return (resp["hydra:member"] || [])
+      .filter((d) => d.isActive && !d.isPrivate)
+      .map((d) => d.domain);
+  },
 
+  async createInbox(opts = {}) {
+    const domains = await this.domains();
+    if (!domains.length) throw new Error("Mail.gw: no active domains");
+    const domain = domains.includes(opts.domain) ? opts.domain : pick(domains);
+
+    const wanted = normalizeLocalPart(opts.localPart);
     const password = randomString(16, 20);
-    let address = `${randomString()}@${domain}`;
+    let address = `${wanted || randomString()}@${domain}`;
 
     let created = await tryCreate(address, password);
     if (created === "taken") {
+      if (wanted) throw new Error("Mail.gw: that address is already taken");
       address = `${randomString()}@${domain}`;
       created = await tryCreate(address, password);
     }
@@ -89,6 +95,14 @@ export const mailgw = {
     return res.blob();
   },
 
+  async deleteMessage(session, id) {
+    const res = await fetch(`${BASE}/messages/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${session.token}` },
+    });
+    if (!res.ok && res.status !== 404) throw new Error(`Mail.gw: delete ${res.status}`);
+  },
+
   async destroy(session) {
     try {
       await fetch(`${BASE}/accounts/${session.accountId}`, {
@@ -100,6 +114,13 @@ export const mailgw = {
     }
   },
 };
+
+// mail.gw local-part rule: ^[a-z0-9._-]+$ (we also cap length)
+function normalizeLocalPart(v) {
+  if (!v) return "";
+  const s = String(v).toLowerCase().trim().replace(/[^a-z0-9._-]/g, "");
+  return s.slice(0, 32);
+}
 
 async function tryCreate(address, password) {
   try {

@@ -112,6 +112,14 @@ const DICTS = {
     "foot.privacy": "Privacy",
     "foot.line1": "Static client - public disposable-mail APIs",
     "foot.line2": "Never use a temporary address for anything private",
+    "status.throttled": "Provider rate limit - slowing down",
+    "toolbar.throttled": "throttled - retrying slower",
+    "addr.edit": "Edit",
+    "addr.set": "Set",
+    "addr.cancel": "Cancel",
+    "addr.pickName": "Pick a name",
+    "reader.delete": "Delete",
+    "reader.backToList": "Messages",
   },
 
   lv: {
@@ -224,6 +232,14 @@ const DICTS = {
     "foot.privacy": "Privātums",
     "foot.line1": "Statisks klients - publiskie vienreizējā pasta API",
     "foot.line2": "Nekad nelieto pagaidu adresi neko privātam",
+    "status.throttled": "Avota ātruma limits - palēninu",
+    "toolbar.throttled": "palēnināts - mēģina retāk",
+    "addr.edit": "Rediģēt",
+    "addr.set": "Iestatīt",
+    "addr.cancel": "Atcelt",
+    "addr.pickName": "Izvēlies vārdu",
+    "reader.delete": "Dzēst",
+    "reader.backToList": "Vēstules",
   },
 
   de: {
@@ -336,6 +352,14 @@ const DICTS = {
     "foot.privacy": "Datenschutz",
     "foot.line1": "Statischer Client - öffentliche Wegwerf-Mail-APIs",
     "foot.line2": "Nutze eine temporäre Adresse nie für Privates",
+    "status.throttled": "Anbieter-Limit - langsamer",
+    "toolbar.throttled": "gedrosselt - langsamerer Versuch",
+    "addr.edit": "Bearbeiten",
+    "addr.set": "Setzen",
+    "addr.cancel": "Abbrechen",
+    "addr.pickName": "Namen wählen",
+    "reader.delete": "Löschen",
+    "reader.backToList": "Nachrichten",
   },
 
   es: {
@@ -448,6 +472,14 @@ const DICTS = {
     "foot.privacy": "Privacidad",
     "foot.line1": "Cliente estático - APIs públicas de correo desechable",
     "foot.line2": "Nunca uses una dirección temporal para nada privado",
+    "status.throttled": "Límite del proveedor - ralentizando",
+    "toolbar.throttled": "limitado - reintento más lento",
+    "addr.edit": "Editar",
+    "addr.set": "Fijar",
+    "addr.cancel": "Cancelar",
+    "addr.pickName": "Elige un nombre",
+    "reader.delete": "Eliminar",
+    "reader.backToList": "Mensajes",
   },
 };
 
