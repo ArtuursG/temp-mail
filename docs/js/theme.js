@@ -1,24 +1,23 @@
-// Light / Dark, chosen with two buttons (matches the design mockup).
-// First visit follows the OS setting; after that the choice is remembered.
+// Light / Dark, one toggle button. First visit follows the OS setting;
+// after that the choice is remembered in localStorage.
+import { onLangChange, t } from "./i18n.js";
 
 const KEY = "tempmail:theme";
 let mode = "light";
-const listeners = new Set();
 
 function apply() {
   document.documentElement.setAttribute("data-theme", mode);
-  document.querySelectorAll("[data-theme-btn]").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.themeBtn === mode);
-  });
-  listeners.forEach((fn) => fn(mode));
+  const btn = document.getElementById("theme-toggle");
+  if (btn) {
+    btn.textContent = mode === "dark" ? "☾" : "☀";
+    const label = `${t("theme.toggle")} (${t(mode === "dark" ? "theme.dark" : "theme.light")})`;
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+  }
 }
 
 export function getTheme() {
   return mode;
-}
-
-export function onThemeChange(fn) {
-  listeners.add(fn);
 }
 
 export function setTheme(next) {
@@ -41,11 +40,10 @@ export function initTheme() {
   if (stored === "light" || stored === "dark") {
     mode = stored;
   } else {
-    mode =
-      window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    mode = window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
   apply();
-  document.querySelectorAll("[data-theme-btn]").forEach((btn) => {
-    btn.addEventListener("click", () => setTheme(btn.dataset.themeBtn));
-  });
+  const btn = document.getElementById("theme-toggle");
+  if (btn) btn.addEventListener("click", () => setTheme(mode === "dark" ? "light" : "dark"));
+  onLangChange(apply); // keep the tooltip in sync with the language
 }

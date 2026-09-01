@@ -75,10 +75,17 @@ then a message-list / reader split.
 * **Tabs**: **Inbox** and **What is temp mail** (about + FAQ accordion).
 * **Features**: verification-code detection (scans plain text *and* HTML bodies,
   shows the OTP in a copy box); attachment chips with download (Mail.gw);
-  HTML mail in a sandboxed iframe with a CSP that blocks remote images / scripts /
-  beacons; per-message delete; pick-your-own address name (**Edit**);
-  expiry countdown from `provider.retentionSeconds`; desktop notifications;
+  per-message delete; pick-your-own address name (**Edit**); desktop notifications;
   polling backs off to 20 s when a provider returns HTTP 429; `aria-live` status.
+* **Lifetime** - a selector (10 min / 30 min / 1 h / Max, default **1 h**). The
+  countdown runs to that; at zero the address freezes, polling stops and the
+  session token is dropped. "Max" = the provider's own retention (Mail.gw 7 d,
+  Guerrilla 1 h). This is a client-side lifetime; the provider still holds already
+  received mail for its own retention window.
+* **Security**: page CSP (`script-src 'self'`, `connect-src` limited to the two
+  mail APIs), `referrer: no-referrer`, and a per-frame CSP on rendered HTML mail
+  that blocks remote images / scripts / fonts. No external requests at all
+  (fonts self-hosted).
 
 ---
 
