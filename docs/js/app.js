@@ -25,8 +25,23 @@ const state = {
   clockTimer: null,
   loading: false,
   rateLimitedUntil: 0,
+  expired: false,
+  lifetime: readLifetime(), // "600" | "1800" | "3600" | "max"
   status: { key: "status.starting", vars: null, busy: false },
 };
+
+function readLifetime() {
+  try {
+    const v = localStorage.getItem("tempmail:lifetime");
+    return ["600", "1800", "3600", "max"].includes(v) ? v : "3600";
+  } catch {
+    return "3600";
+  }
+}
+function lifetimeSeconds(provider) {
+  const cap = provider?.retentionSeconds || 3600;
+  return state.lifetime === "max" ? cap : Math.min(Number(state.lifetime), cap);
+}
 
 /* ---------- persistence ---------- */
 function saveInbox() {
@@ -63,12 +78,16 @@ function renderStatus() {
 /* ---------- inbox lifecycle ---------- */
 async function createInbox(providerId, opts = {}) {
   stopPolling();
+  stopClock();
   setStatus("status.generating", null, true);
+  state.inbox = null; // so the clock/poll can't act on the old one mid-request
   state.messages = [];
   state.seen = new Set();
   state.activeId = null;
   state.activeMessage = null;
   state.rateLimitedUntil = 0;
+  state.expired = false;
+  document.querySelector(".app")?.classList.remove("expired");
   renderList();
   renderReader();
   renderHeader();
@@ -125,7 +144,7 @@ function stopPolling() {
   state.pollTimer = null;
 }
 function scheduleNextPoll() {
-  if (!state.inbox) return;
+  if (!state.inbox || state.expired) return;
   const base = getProvider(state.inbox.provider).pollInterval || 5000;
   const throttled = state.rateLimitedUntil > Date.now();
   const delay = throttled ? Math.max(base, 20000) : base;
@@ -135,9 +154,13 @@ function scheduleNextPoll() {
   }, delay);
 }
 function startClock() {
-  if (state.clockTimer) clearInterval(state.clockTimer);
+  stopClock();
   renderClock();
   state.clockTimer = setInterval(renderClock, 1000);
+}
+function stopClock() {
+  if (state.clockTimer) clearInterval(state.clockTimer);
+  state.clockTimer = null;
 }
 
 function isRateLimit(err) {
@@ -145,7 +168,7 @@ function isRateLimit(err) {
 }
 
 async function pollOnce() {
-  if (!state.inbox || state.loading) return;
+  if (!state.inbox || state.loading || state.expired) return;
   state.loading = true;
   const provider = getProvider(state.inbox.provider);
   const wasBusy = state.status.busy;
@@ -226,13 +249,14 @@ function renderClock() {
     bar.style.width = "100%";
     return;
   }
-  const total = getProvider(i.provider).retentionSeconds || 3600;
+  const total = lifetimeSeconds(getProvider(i.provider));
   const left = Math.max(0, total - (Date.now() - i.createdAt) / 1000);
   bar.style.width = `${(left / total) * 100}%`;
   bar.classList.toggle("low", left < 300);
   if (left <= 0) {
     clock.textContent = "00:00";
     note.textContent = t("expiry.expired");
+    if (!state.expired) freezeExpired();
     return;
   }
   note.textContent = t("expiry.note");
@@ -241,6 +265,18 @@ function renderClock() {
   const m = Math.floor((left % 3600) / 60);
   const s = Math.floor(left % 60);
   clock.textContent = d > 0 ? `${d}d ${pad(h)}:${pad(m)}` : `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
+// Address hit its chosen lifetime: stop polling and drop the token.
+function freezeExpired() {
+  state.expired = true;
+  stopPolling();
+  setStatus("status.expired");
+  document.querySelector(".app")?.classList.add("expired");
+  if (state.inbox) {
+    getProvider(state.inbox.provider).destroy(state.inbox.session).catch(() => {});
+    clearStoredInbox();
+  }
 }
 
 /* ---------- rendering: list ---------- */
@@ -411,7 +447,7 @@ function renderReader() {
       (a, idx) => `
       <div class="att-chip">
         <div class="ico"></div>
-        <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+        <div class="att-info">
           <span class="att-name">${esc(a.filename)}</span>
           <span class="att-size">${esc(fmtSize(a.size))}</span>
         </div>
@@ -583,6 +619,15 @@ function initControls() {
 
   $("#lang").addEventListener("change", (e) => setLang(e.target.value));
   $("#provider").addEventListener("change", () => createInbox($("#provider").value));
+
+  $("#lifetime").value = state.lifetime;
+  $("#lifetime").addEventListener("change", (e) => {
+    state.lifetime = e.target.value;
+    try {
+      localStorage.setItem("tempmail:lifetime", state.lifetime);
+    } catch {}
+    renderClock();
+  });
 
   $("#copy").addEventListener("click", async () => {
     if (!state.inbox) return;
