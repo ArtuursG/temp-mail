@@ -1,0 +1,688 @@
+/* Tempmail - disposable mail terminal.
+   Terminal aesthetic: Inter + Geist Mono, thin 1px lines, boxy, purple accent.
+   Two explicit themes via :root[data-theme]. */
+
+:root,
+:root[data-theme="light"] {
+  --bg: #f3f2f7;
+  --panel: #ffffff;
+  --panel2: #faf9fd;
+  --ink: #2e2c36;
+  --ink2: #26242c;
+  --ink3: #56545f;
+  --muted: #6d6b7a;
+  --line: #edebf4;
+  --line2: #f2f1f7;
+  --hair: #e9e7f2;
+  --tint: #f7f6fd;
+  --row-active: #f7f6fd;
+  --row-hover: #fbfaff;
+  --accent: #6d5bd0;
+  --on-accent: #ffffff;
+}
+
+:root[data-theme="dark"] {
+  --bg: #121118;
+  --panel: #1a1922;
+  --panel2: #201e29;
+  --ink: #eeebf7;
+  --ink2: #f5f3fb;
+  --ink3: #bab6c8;
+  --muted: #9c98ac;
+  --line: #2c2a36;
+  --line2: #26242f;
+  --hair: #3a3746;
+  --tint: #262038;
+  --row-active: #262038;
+  --row-hover: #211f2b;
+  --accent: #9080ea;
+  --on-accent: #15141a;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 15px/1.55 Inter, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono { font-family: "Geist Mono", ui-monospace, Menlo, monospace; }
+.muted { color: var(--muted); }
+.accent { color: var(--accent); }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--ink); }
+::selection { background: var(--tint); color: var(--ink); }
+
+.kicker {
+  font: 400 10px/1.4 "Geist Mono", ui-monospace, monospace;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.kicker.accent { color: var(--accent); }
+
+.tm-scroll::-webkit-scrollbar { width: 12px; }
+.tm-scroll::-webkit-scrollbar-track { background: var(--panel); border-left: 1px solid var(--line2); }
+.tm-scroll::-webkit-scrollbar-thumb { background: var(--hair); border: 4px solid var(--panel); }
+
+.sr-label {
+  position: absolute; width: 1px; height: 1px;
+  margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ---------- shell ---------- */
+.app {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+/* ---------- header ---------- */
+.hdr {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 22px;
+  padding: 18px 44px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.wordmark { display: flex; align-items: flex-end; gap: 12px; }
+.wordmark .logo {
+  width: 27px;
+  height: 27px;
+  flex: none;
+  margin-bottom: 1px;
+  color: var(--accent);
+  display: block;
+}
+.wordmark .name {
+  font: 500 26px/0.9 Inter, sans-serif;
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.wordmark .name-accent { color: var(--accent); }
+.wordmark .tagline {
+  font: 400 10px/1 "Geist Mono", monospace;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-bottom: 3px;
+}
+.hdr-rule { width: 1px; height: 30px; background: var(--line); }
+
+.statusline { display: flex; align-items: center; gap: 9px; }
+.statusline span:last-child {
+  font: 400 11px/1 "Geist Mono", monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.dot { width: 9px; height: 9px; background: var(--accent); flex: none; }
+.dot.busy { background: #c98a1e; }
+
+.hdr-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+.meta { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+
+.theme-toggle { display: flex; height: 26px; border: 1px solid var(--hair); }
+.theme-toggle button {
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 400 10px/1 "Geist Mono", monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.theme-toggle button.active { background: var(--accent); color: var(--on-accent); font-weight: 500; }
+
+.mono-select {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--hair);
+  background: var(--panel);
+  color: var(--ink);
+  font: 400 10px/1 "Geist Mono", monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.pill {
+  height: 26px;
+  padding: 0 14px;
+  border: 1px solid var(--hair);
+  background: transparent;
+  color: var(--muted);
+  font: 400 10px/1 "Geist Mono", monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.pill.on { background: var(--tint); color: var(--accent); font-weight: 500; }
+
+/* ---------- tabs ---------- */
+.tabs {
+  flex: none;
+  display: flex;
+  padding: 0 44px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 20px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 400 11px/1 "Geist Mono", monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+a.tab:hover { color: var(--accent); }
+.tab:hover { color: var(--ink); }
+.tab.active { color: var(--ink); font-weight: 500; box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* ---------- panels ---------- */
+.panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+/* ---------- address strip ---------- */
+.addr-strip {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr 372px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.addr-main {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  padding: 24px 44px 22px;
+  border-right: 1px solid var(--line);
+}
+.addr-text { display: flex; flex-direction: column; gap: 10px; min-width: 0; flex: 1; }
+.addr {
+  font: 400 34px/1.05 "Geist Mono", monospace;
+  letter-spacing: -0.028em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.expiry {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 11px;
+  padding: 24px 44px 22px 30px;
+}
+.expiry-row { display: flex; align-items: baseline; gap: 10px; }
+.expiry-clock {
+  margin-left: auto;
+  font: 500 22px/1 "Geist Mono", monospace;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.expiry-track { height: 9px; border: 1px solid var(--line); padding: 1px; display: flex; }
+.expiry-bar { height: 100%; width: 100%; background: var(--accent); opacity: 0.55; transition: width 1s linear; }
+.expiry-bar.low { opacity: 1; }
+
+/* ---------- toolbar ---------- */
+.toolbar {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel2);
+}
+.tool {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 22px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font: 500 11px/1 "Geist Mono", monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+button.tool:hover { background: var(--tint); color: var(--accent); }
+.tool.accent { color: var(--accent); }
+.tool.source { color: var(--muted); font-weight: 400; letter-spacing: 0.18em; cursor: default; }
+.tool.source .mono-select { height: 24px; }
+.tool.busy { background: var(--tint); color: var(--accent); }
+.poll {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 0 44px 0 22px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---------- workspace ---------- */
+.workspace {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 468px 1fr;
+  min-height: 520px;
+}
+.list-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+}
+.list-head {
+  flex: none;
+  display: grid;
+  grid-template-columns: 26px 1fr 96px;
+  align-items: center;
+  height: 34px;
+  padding-right: 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.list-head .mono { font-size: 9.5px; letter-spacing: 0.22em; text-transform: uppercase; }
+.list-head .mono:last-child { text-align: right; }
+
+.list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+
+.row {
+  flex: none;
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  padding: 15px 18px 15px 0;
+  border-bottom: 1px solid var(--line2);
+  cursor: pointer;
+}
+.row:hover { background: var(--row-hover); }
+.row.active { background: var(--row-active); box-shadow: inset 2px 0 0 var(--accent); }
+.row-dot { display: flex; justify-content: center; padding-top: 4px; }
+.row-dot span { width: 7px; height: 7px; background: transparent; }
+.row.unread .row-dot span { background: var(--accent); }
+.row-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.row-top { display: flex; align-items: baseline; gap: 10px; }
+.row-from {
+  font: 400 11px/1 "Geist Mono", monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row.unread .row-from { color: var(--ink); font-weight: 500; }
+.row-time {
+  margin-left: auto;
+  flex: none;
+  font: 400 10.5px/1 "Geist Mono", monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.row-subject {
+  font: 400 15px/1.28 Inter, sans-serif;
+  letter-spacing: -0.011em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row.unread .row-subject { font-weight: 500; }
+.row-intro {
+  font: 400 12px/1.4 Inter, sans-serif;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 40px;
+  text-align: center;
+}
+.list-empty .box { width: 92px; height: 62px; border: 1px solid var(--hair); }
+.list-empty .t {
+  font: 500 12px/1 "Geist Mono", monospace;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.list-empty .b { font-size: 12.5px; line-height: 1.55; color: var(--muted); max-width: 250px; }
+
+/* ---------- reader ---------- */
+.reader-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--panel);
+}
+.reader-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 48px;
+  text-align: center;
+}
+.reader-empty .hr { width: 160px; height: 1px; background: var(--hair); }
+.reader-empty span { font-size: 13.5px; color: var(--muted); }
+
+.reader-head {
+  flex: none;
+  padding: 30px 48px 24px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.reader-title { display: flex; align-items: flex-start; gap: 30px; }
+.reader-head h2 {
+  margin: 0;
+  font: 600 30px/1.18 Inter, sans-serif;
+  letter-spacing: -0.028em;
+  max-width: 660px;
+  color: var(--ink);
+}
+.reader-date {
+  margin-left: auto;
+  flex: none;
+  padding-top: 10px;
+  font: 400 10.5px/1 "Geist Mono", monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.reader-meta {
+  display: grid;
+  grid-template-columns: 66px 1fr;
+  gap: 5px 14px;
+  font: 400 11.5px/1.5 "Geist Mono", monospace;
+  color: var(--ink3);
+}
+.reader-meta .lbl { letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+.reader-meta strong { font-weight: 500; color: var(--ink); }
+
+.reader-body { flex: 1; min-height: 0; padding: 32px 48px 44px; }
+.reader-body-inner { max-width: 640px; display: flex; flex-direction: column; gap: 18px; }
+.reader-body p { margin: 0; font: 400 15px/1.7 Inter, sans-serif; color: var(--ink2); }
+
+.reader-body iframe {
+  width: 100%;
+  min-height: 52vh;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.code-box {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin: 6px 0;
+  padding: 20px 24px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+}
+.code-box .code {
+  font: 500 34px/1 "Geist Mono", monospace;
+  letter-spacing: 0.14em;
+  color: var(--ink);
+}
+.code-box .code-label {
+  margin-left: auto;
+  font: 400 10px/1.4 "Geist Mono", monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: right;
+}
+
+.att-chip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  max-width: 360px;
+}
+.att-chip .ico { flex: none; width: 26px; height: 34px; border: 1px solid var(--hair); }
+.att-chip .att-name {
+  font: 400 12.5px/1 "Geist Mono", monospace;
+  color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.att-chip .att-size {
+  font: 400 10px/1 "Geist Mono", monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.att-chip .att-save {
+  margin-left: auto;
+  font: 500 10px/1 "Geist Mono", monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.reader-note {
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line2);
+  font: 400 10px/1.7 "Geist Mono", monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---------- buttons ---------- */
+.btn-solid {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 54px;
+  min-width: 132px;
+  padding: 0 22px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 500 12px/1 "Geist Mono", monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.btn-solid.copied { background: var(--tint); color: var(--accent); border-color: var(--hair); }
+.btn-solid.lg { height: 44px; }
+.btn-ghost {
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--hair);
+  background: transparent;
+  color: var(--ink);
+  font: 500 11px/1 "Geist Mono", monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* ---------- about ---------- */
+.about { overflow-y: auto; background: var(--panel); }
+.about-inner {
+  max-width: 880px;
+  padding: 52px 44px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+.about-lede { display: flex; flex-direction: column; gap: 16px; }
+.about-lede h1 {
+  margin: 0;
+  font: 600 38px/1.1 Inter, sans-serif;
+  letter-spacing: -0.032em;
+  max-width: 720px;
+  color: var(--ink);
+}
+.p-lg { margin: 0; font: 400 16px/1.65 Inter, sans-serif; color: var(--ink2); max-width: 680px; }
+.p-lg.muted { color: var(--ink3); }
+
+.about-rows { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.about-row {
+  display: grid;
+  grid-template-columns: 230px 1fr;
+  gap: 28px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.about-row > span:first-child { font: 500 14px/1.35 Inter, sans-serif; letter-spacing: -0.011em; color: var(--ink); }
+.about-row > span:last-child { font: 400 14.5px/1.6 Inter, sans-serif; color: var(--ink3); }
+
+.about-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+.about-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 22px 20px;
+  background: var(--panel);
+  font: 400 13.5px/1.55 Inter, sans-serif;
+  color: var(--ink3);
+}
+
+.about-faq { display: flex; flex-direction: column; gap: 8px; }
+.about-faq details {
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  padding: 12px 16px;
+}
+.about-faq summary {
+  cursor: pointer;
+  font: 500 14px/1.4 Inter, sans-serif;
+  color: var(--ink);
+}
+.about-faq details p { margin: 10px 0 2px; font-size: 14px; line-height: 1.6; color: var(--muted); }
+
+.about-cta { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+
+/* ---------- legal pages (terms / privacy) ---------- */
+.about-inner.legal { gap: 4px; max-width: 720px; }
+.about-inner.legal h1 { margin: 10px 0 6px; }
+.about-inner.legal h2 {
+  margin: 30px 0 6px;
+  font: 500 15px/1.4 Inter, sans-serif;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.about-inner.legal p {
+  margin: 0 0 4px;
+  font: 400 14.5px/1.7 Inter, sans-serif;
+  color: var(--ink3);
+  max-width: 660px;
+}
+.about-inner.legal .about-cta { margin-top: 34px; }
+.about-inner.legal code {
+  font: 400 12.5px/1 "Geist Mono", monospace;
+  padding: 2px 5px;
+  border: 1px solid var(--hair);
+  background: var(--panel2);
+  color: var(--ink2);
+}
+
+/* ---------- footer ---------- */
+.foot-main {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 44px;
+  border-top: 1px solid var(--line);
+  background: var(--panel2);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.foot-links { display: flex; gap: 18px; margin-left: auto; }
+.foot-links a { border-bottom: 1px solid var(--hair); }
+
+.foot-note {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 44px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.foot-note .sep { color: var(--hair); }
+.foot-note .foot-addr { margin-left: auto; }
+
+/* ---------- responsive ---------- */
+@media (max-width: 1080px) {
+  .hdr { flex-wrap: wrap; gap: 14px 18px; }
+  .hdr-right { width: 100%; margin-left: 0; flex-wrap: wrap; }
+  .addr-strip { grid-template-columns: 1fr; }
+  .addr-main { border-right: 0; border-bottom: 1px solid var(--line); }
+  .workspace { grid-template-columns: 1fr; }
+  .list-col { border-right: 0; border-bottom: 1px solid var(--line); max-height: 46vh; }
+  .about-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 720px) {
+  .hdr, .tabs, .addr-main, .expiry, .toolbar .poll { padding-left: 20px; padding-right: 20px; }
+  .toolbar { flex-wrap: wrap; }
+  .addr { font-size: 24px; }
+  .reader-head, .reader-body { padding-left: 24px; padding-right: 24px; }
+  .about-inner { padding: 36px 20px 56px; }
+  .about-row { grid-template-columns: 1fr; gap: 8px; }
+  .about-grid { grid-template-columns: 1fr; }
+  .foot-main, .foot-note { flex-wrap: wrap; padding-left: 20px; padding-right: 20px; }
+  .foot-note .foot-addr { margin-left: 0; width: 100%; }
+}

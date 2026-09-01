@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Terms - Tempmail</title>
+  <meta name="robots" content="noindex" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='3.5' fill='%236d5bd0'/%3E%3Cpath d='M3,8L16,17L29,8' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="./css/style.css" />
+  <script>
+    try {
+      var m = localStorage.getItem("tempmail:theme");
+      if (m !== "light" && m !== "dark")
+        m = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", m);
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div class="app">
+    <header class="hdr">
+      <div class="wordmark">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="6" width="28" height="20" rx="3.5" fill="currentColor"/><path d="M3 8 16 17 29 8" fill="none" stroke="var(--panel)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="name">Temp<span class="name-accent">mail</span></span>
+        <span class="tagline">Disposable mail terminal</span>
+      </div>
+      <span class="hdr-rule"></span>
+      <a class="tab" href="./index.html">Back to inbox</a>
+    </header>
+
+    <section class="panel about tm-scroll">
+      <div class="about-inner legal">
+        <span class="kicker">Terms</span>
+        <h1>Terms of use</h1>
+        <p class="p-lg muted">
+          Plain terms for a free tool with no account. By using this page you accept
+          them. Last updated 2026-08-28.
+        </p>
+
+        <h2>What it is</h2>
+        <p>
+          A browser-only client that generates a disposable email address and shows
+          mail sent to it, by talking directly to public disposable-mail APIs. It is
+          free, needs no signup, and is provided as-is.
+        </p>
+
+        <h2>Receive-only</h2>
+        <p>
+          Temporary inboxes can only receive mail. This page cannot send email and
+          offers no way to reply.
+        </p>
+
+        <h2>No guarantees</h2>
+        <p>
+          There is no uptime, delivery, or retention guarantee. Addresses and
+          messages are wiped by the upstream provider on its own schedule (Mail.gw
+          after 7 days, Guerrilla Mail after 1 hour) and cannot be recovered. A
+          provider may rate-limit or block requests, reject an address, or go
+          offline at any time. Verification codes may be delayed or never arrive.
+        </p>
+
+        <h2>Acceptable use</h2>
+        <p>
+          Do not use this tool to break the terms of another service, evade bans,
+          send spam, harass anyone, or do anything unlawful. Do not use a temporary
+          address for banking, payments, identity, work, healthcare, government
+          services, or any login you need to keep.
+        </p>
+
+        <h2>Liability</h2>
+        <p>
+          To the extent the law allows, whoever operates this copy of Tempmail is
+          not liable for any loss arising from its use, including lost or missed
+          mail, missed verification codes, or downtime of an upstream provider. The
+          terms and policies of Mail.gw and Guerrilla Mail also apply to any mail
+          handled through them.
+        </p>
+
+        <h2>Changes</h2>
+        <p>
+          These terms can change without notice. Continued use after a change means
+          you accept the new version.
+        </p>
+
+        <div class="about-cta">
+          <a class="btn-solid lg" href="./index.html">Back to inbox</a>
+          <a class="kicker" href="./privacy.html">Read the privacy note</a>
+        </div>
+      </div>
+    </section>
+
+    <div class="foot-note mono">
+      <span>Static client - public disposable-mail APIs</span>
+      <span class="sep">/</span>
+      <span>Never use a temporary address for anything private</span>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tempmail - Disposable Mail Terminal</title>
+  <meta name="description" content="Disposable temporary email. No signup. New mail shows up on its own." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='3.5' fill='%236d5bd0'/%3E%3Cpath d='M3,8L16,17L29,8' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="./css/style.css" />
+  <script>
+    try {
+      var m = localStorage.getItem("tempmail:theme");
+      if (m !== "light" && m !== "dark")
+        m = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", m);
+    } catch (e) {}
+  </script>
+</head>
+<body>
+  <div class="app">
+
+    <!-- ============ HEADER ============ -->
+    <header class="hdr">
+      <div class="wordmark">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="6" width="28" height="20" rx="3.5" fill="currentColor"/><path d="M3 8 16 17 29 8" fill="none" stroke="var(--panel)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="name">Temp<span class="name-accent">mail</span></span>
+        <span class="tagline" data-i18n="brand.tagline">Disposable mail terminal</span>
+      </div>
+
+      <span class="hdr-rule"></span>
+
+      <div class="statusline">
+        <span class="dot" id="status-dot"></span>
+        <span id="status" data-i18n="status.starting">Booting</span>
+      </div>
+
+      <div class="hdr-right">
+        <span class="meta mono" id="meta"></span>
+
+        <div class="theme-toggle">
+          <button data-theme-btn="light" type="button" data-i18n="theme.light">Light</button>
+          <button data-theme-btn="dark" type="button" data-i18n="theme.dark">Dark</button>
+        </div>
+
+        <label class="sr-label" for="lang" data-i18n="lang.label">Language</label>
+        <select id="lang" class="mono-select"></select>
+
+        <button id="notify" class="pill" type="button" data-i18n="notify.off">Alerts off</button>
+      </div>
+    </header>
+
+    <!-- ============ TABS ============ -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="inbox" data-i18n="nav.inbox">Inbox</button>
+      <button class="tab" data-tab="about" data-i18n="nav.about">What is temp mail</button>
+    </nav>
+
+    <!-- ============ INBOX ============ -->
+    <section class="panel" id="panel-inbox">
+
+      <div class="addr-strip">
+        <div class="addr-main">
+          <div class="addr-text">
+            <span class="kicker" data-i18n="addr.deliverTo">Deliver mail to</span>
+            <span class="addr mono" id="address">-</span>
+          </div>
+          <button id="copy" class="btn-solid" data-i18n="addr.copy">Copy</button>
+        </div>
+
+        <div class="expiry">
+          <div class="expiry-row">
+            <span class="kicker" data-i18n="expiry.label">Expires</span>
+            <span class="expiry-clock mono" id="expiry-clock">--:--</span>
+          </div>
+          <div class="expiry-track"><div class="expiry-bar" id="expiry-bar"></div></div>
+          <span class="kicker" id="expiry-note" data-i18n="expiry.note">Session dies with the clock</span>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <button id="refresh" class="tool" data-i18n="toolbar.refresh">Refresh</button>
+        <button id="new" class="tool" data-i18n="toolbar.new">New address</button>
+        <button id="burn" class="tool accent" data-i18n="toolbar.burn">Burn it</button>
+        <label class="tool source">
+          <span data-i18n="toolbar.source">Source</span>
+          <select id="provider" class="mono-select"></select>
+        </label>
+        <span class="poll mono" id="poll-text"></span>
+      </div>
+
+      <div class="workspace">
+        <div class="list-col">
+          <div class="list-head">
+            <span></span>
+            <span class="mono" data-i18n="list.header">Sender / subject</span>
+            <span class="mono" id="held-count"></span>
+          </div>
+          <div class="list tm-scroll" id="msg-list"></div>
+        </div>
+        <div class="reader-col tm-scroll" id="reader"></div>
+      </div>
+    </section>
+
+    <!-- ============ ABOUT ============ -->
+    <section class="panel about tm-scroll" id="panel-about" hidden>
+      <div class="about-inner">
+        <div class="about-lede">
+          <span class="kicker" data-i18n="about.kicker">01 - Basics</span>
+          <h1 data-i18n="about.title">What is a disposable temporary email?</h1>
+          <p class="p-lg" data-i18n="about.p1"></p>
+          <p class="p-lg muted" data-i18n="about.p2"></p>
+        </div>
+
+        <div class="about-rows">
+          <div class="about-row">
+            <span data-i18n="about.f1t"></span>
+            <span class="muted" data-i18n="about.f1b"></span>
+          </div>
+          <div class="about-row">
+            <span data-i18n="about.f2t"></span>
+            <span class="muted" data-i18n="about.f2b"></span>
+          </div>
+        </div>
+
+        <div class="about-grid">
+          <div><span class="kicker accent" data-i18n="about.g1t"></span><span data-i18n="about.g1b"></span></div>
+          <div><span class="kicker accent" data-i18n="about.g2t"></span><span data-i18n="about.g2b"></span></div>
+          <div><span class="kicker accent" data-i18n="about.g3t"></span><span data-i18n="about.g3b"></span></div>
+          <div><span class="kicker accent" data-i18n="about.g4t"></span><span data-i18n="about.g4b"></span></div>
+        </div>
+
+        <div class="about-rows">
+          <div class="about-row">
+            <span data-i18n="about.retentionT"></span>
+            <span class="muted" data-i18n="about.retentionB"></span>
+          </div>
+          <div class="about-row">
+            <span data-i18n="about.avoidT"></span>
+            <span class="muted" data-i18n="about.avoidB"></span>
+          </div>
+          <div class="about-row">
+            <span data-i18n="about.privacyT"></span>
+            <span class="muted" data-i18n="about.privacyB"></span>
+          </div>
+        </div>
+
+        <div class="about-faq">
+          <span class="kicker" data-i18n="about.faqTitle">Common questions</span>
+          <details><summary data-i18n="faq.q1"></summary><p data-i18n="faq.a1"></p></details>
+          <details><summary data-i18n="faq.q2"></summary><p data-i18n="faq.a2"></p></details>
+          <details><summary data-i18n="faq.q3"></summary><p data-i18n="faq.a3"></p></details>
+          <details><summary data-i18n="faq.q4"></summary><p data-i18n="faq.a4"></p></details>
+          <details><summary data-i18n="faq.q5"></summary><p data-i18n="faq.a5"></p></details>
+          <details><summary data-i18n="faq.q6"></summary><p data-i18n="faq.a6"></p></details>
+        </div>
+
+        <div class="about-cta">
+          <button class="btn-solid lg" data-tab-jump="inbox" data-i18n="about.cta">Get an address</button>
+          <span class="kicker" id="cta-note"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ FOOTER ============ -->
+    <footer class="foot-main">
+      <span class="mono muted" data-i18n="foot.copy">2026 Tempmail</span>
+      <nav class="foot-links mono">
+        <a href="./terms.html" data-i18n="foot.terms">Terms</a>
+        <a href="./privacy.html" data-i18n="foot.privacy">Privacy</a>
+      </nav>
+    </footer>
+    <div class="foot-note mono">
+      <span data-i18n="foot.line1">Static client - public disposable-mail APIs</span>
+      <span class="sep">/</span>
+      <span data-i18n="foot.line2">Never use a temporary address for anything private</span>
+      <span class="foot-addr accent" id="foot-addr"></span>
+    </div>
+  </div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
