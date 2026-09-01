@@ -234,9 +234,11 @@ function renderHeader() {
   $("#meta").textContent = i
     ? t("meta.session", { provider: getProvider(i.provider).label })
     : t("meta.opening");
-  $("#cta-note").textContent = t("about.ctaNote", {
-    retention: getProvider(i?.provider ?? DEFAULT_PROVIDER).retention || "1h",
-  });
+  const prov = getProvider(i?.provider ?? DEFAULT_PROVIDER);
+  const provRetention = prov.retentionKey ? t(prov.retentionKey) : prov.retention || "1h";
+  $("#cta-note").textContent = t("about.ctaNote", { retention: provRetention });
+  const maxOpt = document.querySelector('#lifetime option[value="max"]');
+  if (maxOpt) maxOpt.textContent = `${t("lifetime.max")} (${provRetention})`;
 }
 
 function renderClock() {
