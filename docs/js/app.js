@@ -24,6 +24,7 @@ const state = {
   pollTimer: null,
   clockTimer: null,
   loading: false,
+  rateLimitedUntil: 0,
   status: { key: "status.starting", vars: null, busy: false },
 };
 
@@ -60,29 +61,32 @@ function renderStatus() {
 }
 
 /* ---------- inbox lifecycle ---------- */
-async function createInbox(providerId) {
+async function createInbox(providerId, opts = {}) {
   stopPolling();
   setStatus("status.generating", null, true);
   state.messages = [];
   state.seen = new Set();
   state.activeId = null;
   state.activeMessage = null;
+  state.rateLimitedUntil = 0;
   renderList();
   renderReader();
   renderHeader();
   try {
     const provider = getProvider(providerId || DEFAULT_PROVIDER);
-    const inbox = await provider.createInbox();
+    const inbox = await provider.createInbox(opts);
     state.inbox = { ...inbox, createdAt: Date.now() };
     saveInbox();
     renderHeader();
     startClock();
     await pollOnce();
     startPolling();
+    return true;
   } catch (err) {
     setStatus("status.createFail", { error: err.message });
     renderHeader();
     renderList();
+    return false;
   }
 }
 
@@ -111,22 +115,33 @@ function burnInbox() {
 }
 
 /* ---------- polling + clock ---------- */
+// Self-scheduling loop so the delay can grow when a provider rate-limits us.
 function startPolling() {
   stopPolling();
-  if (!state.inbox) return;
-  const provider = getProvider(state.inbox.provider);
-  state.pollTimer = setInterval(() => {
-    if (!document.hidden) pollOnce();
-  }, provider.pollInterval || 5000);
+  scheduleNextPoll();
 }
 function stopPolling() {
-  if (state.pollTimer) clearInterval(state.pollTimer);
+  if (state.pollTimer) clearTimeout(state.pollTimer);
   state.pollTimer = null;
+}
+function scheduleNextPoll() {
+  if (!state.inbox) return;
+  const base = getProvider(state.inbox.provider).pollInterval || 5000;
+  const throttled = state.rateLimitedUntil > Date.now();
+  const delay = throttled ? Math.max(base, 20000) : base;
+  state.pollTimer = setTimeout(async () => {
+    if (!document.hidden) await pollOnce();
+    scheduleNextPoll();
+  }, delay);
 }
 function startClock() {
   if (state.clockTimer) clearInterval(state.clockTimer);
   renderClock();
   state.clockTimer = setInterval(renderClock, 1000);
+}
+
+function isRateLimit(err) {
+  return /\b429\b|rate.?limit|too many/i.test(String(err && err.message));
 }
 
 async function pollOnce() {
@@ -137,6 +152,10 @@ async function pollOnce() {
   if (!wasBusy) setStatus("status.syncing", null, true);
   try {
     const incoming = await provider.listMessages(state.inbox.session);
+    if (state.rateLimitedUntil) {
+      state.rateLimitedUntil = 0;
+      renderHeader();
+    }
     saveInbox();
     const known = new Set(state.messages.map((m) => m.id));
     const fresh = incoming.filter((m) => !known.has(m.id));
@@ -147,7 +166,13 @@ async function pollOnce() {
     if (fresh.length && known.size) notify(fresh[0]);
     renderLiveStatus();
   } catch (err) {
-    setStatus("status.error", { error: err.message });
+    if (isRateLimit(err)) {
+      state.rateLimitedUntil = Date.now() + 60000;
+      setStatus("status.throttled");
+      renderHeader();
+    } else {
+      setStatus("status.error", { error: err.message });
+    }
   } finally {
     state.loading = false;
   }
@@ -175,9 +200,14 @@ function renderHeader() {
   $("#address").textContent = state.status.busy && !i ? "· · · · · · · ·" : addr;
   $("#foot-addr").textContent = i ? addr : "";
   $("#provider").value = i ? i.provider : DEFAULT_PROVIDER;
-  $("#poll-text").textContent = t("toolbar.poll", {
-    n: Math.round((getProvider(i?.provider ?? DEFAULT_PROVIDER).pollInterval || 5000) / 1000),
-  });
+  $("#poll-text").textContent =
+    state.rateLimitedUntil > Date.now()
+      ? t("toolbar.throttled")
+      : t("toolbar.poll", {
+          n: Math.round(
+            (getProvider(i?.provider ?? DEFAULT_PROVIDER).pollInterval || 5000) / 1000
+          ),
+        });
   $("#meta").textContent = i
     ? t("meta.session", { provider: getProvider(i.provider).label })
     : t("meta.opening");
@@ -301,6 +331,20 @@ function textToParas(text) {
     .slice(0, 40);
 }
 
+// Plain-text view of an HTML body, so code detection works on HTML-only mail.
+function htmlToText(html) {
+  try {
+    const doc = new DOMParser().parseFromString(String(html), "text/html");
+    doc.querySelectorAll("script, style, head, title").forEach((n) => n.remove());
+    return (doc.body?.textContent || "")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  } catch {
+    return "";
+  }
+}
+
 async function openMessage(id) {
   state.activeId = id;
   state.seen.add(id);
@@ -331,7 +375,8 @@ function renderReader() {
     return;
   }
 
-  const code = findCode(m.subject || "", m.text || "");
+  const scanText = m.text || (m.html ? htmlToText(m.html) : "");
+  const code = findCode(m.subject || "", scanText);
   const atts = m.attachments || [];
 
   let body;
@@ -377,6 +422,10 @@ function renderReader() {
 
   el.innerHTML = `
     <div class="reader-head">
+      <div class="reader-actions">
+        <button class="btn-ghost only-narrow" id="back-to-list">${esc(t("reader.backToList"))}</button>
+        <button class="btn-ghost" id="del-msg">${esc(t("reader.delete"))}</button>
+      </div>
       <div class="reader-title">
         <h2>${esc(m.subject || t("reader.noSubject"))}</h2>
         <span class="reader-date">${esc(fmtFull(m.date))}</span>
@@ -396,6 +445,11 @@ function renderReader() {
         <div class="reader-note">${esc(t("reader.blocked"))}</div>
       </div>
     </div>`;
+
+  $("#back-to-list")?.addEventListener("click", () => {
+    document.querySelector(".list-col")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  $("#del-msg")?.addEventListener("click", () => deleteMessage(m.id));
 
   const cc = $("#copy-code");
   if (cc)
@@ -430,6 +484,61 @@ function fmtSize(n) {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function deleteMessage(id) {
+  if (!state.inbox) return;
+  const provider = getProvider(state.inbox.provider);
+  state.messages = state.messages.filter((m) => m.id !== id);
+  if (state.activeId === id) {
+    state.activeId = null;
+    state.activeMessage = null;
+  }
+  renderList();
+  renderReader();
+  renderLiveStatus();
+  try {
+    await provider.deleteMessage?.(state.inbox.session, id);
+  } catch {
+    /* server-side delete is best-effort; the local list is already updated */
+  }
+}
+
+/* ---------- address editing ---------- */
+async function openAddressEdit() {
+  if (!state.inbox) return;
+  const provider = getProvider(state.inbox.provider);
+  const sel = $("#addr-domain");
+  let domains = [state.inbox.address.split("@")[1]];
+  try {
+    domains = (await provider.domains?.()) || domains;
+  } catch {
+    /* keep current */
+  }
+  sel.innerHTML = domains.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
+  sel.value = state.inbox.address.split("@")[1];
+  $("#addr-local").value = state.inbox.address.split("@")[0];
+  $("#addr-view").hidden = true;
+  $("#addr-edit").hidden = false;
+  $("#edit").hidden = true;
+  $("#edit-set").hidden = false;
+  $("#edit-cancel").hidden = false;
+  $("#addr-local").focus();
+  $("#addr-local").select();
+}
+function closeAddressEdit() {
+  $("#addr-view").hidden = false;
+  $("#addr-edit").hidden = true;
+  $("#edit").hidden = false;
+  $("#edit-set").hidden = true;
+  $("#edit-cancel").hidden = true;
+}
+async function submitAddressEdit() {
+  const local = $("#addr-local").value.trim();
+  const domain = $("#addr-domain").value;
+  if (!local) return;
+  closeAddressEdit();
+  await createInbox(state.inbox.provider, { localPart: local, domain });
 }
 
 /* ---------- tabs ---------- */
@@ -490,6 +599,17 @@ function initControls() {
   $("#refresh").addEventListener("click", pollOnce);
   $("#new").addEventListener("click", () => createInbox($("#provider").value));
   $("#burn").addEventListener("click", burnInbox);
+
+  $("#edit").addEventListener("click", openAddressEdit);
+  $("#edit-cancel").addEventListener("click", closeAddressEdit);
+  $("#edit-set").addEventListener("click", submitAddressEdit);
+  $("#addr-edit").addEventListener("submit", (e) => {
+    e.preventDefault();
+    submitAddressEdit();
+  });
+  $("#addr-local").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeAddressEdit();
+  });
 
   $("#notify").addEventListener("click", async () => {
     const N = window.Notification;

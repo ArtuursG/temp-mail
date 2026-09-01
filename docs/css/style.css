@@ -211,11 +211,11 @@ a.tab:hover { color: var(--accent); }
 .addr-main {
   display: flex;
   align-items: center;
-  gap: 26px;
+  gap: 14px;
   padding: 24px 44px 22px;
   border-right: 1px solid var(--line);
 }
-.addr-text { display: flex; flex-direction: column; gap: 10px; min-width: 0; flex: 1; }
+.addr-text { display: flex; flex-direction: column; gap: 10px; min-width: 0; flex: 1; margin-right: 12px; }
 .addr {
   font: 400 34px/1.05 "Geist Mono", monospace;
   letter-spacing: -0.028em;
@@ -224,6 +224,21 @@ a.tab:hover { color: var(--accent); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.addr-edit { display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 0; margin-right: 12px; }
+.addr-edit-row { display: flex; align-items: center; gap: 6px; }
+.addr-edit-row .addr-at { font-size: 22px; color: var(--muted); }
+#addr-local {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 10px;
+  font: 400 22px/1 "Geist Mono", monospace;
+  color: var(--ink);
+  background: var(--panel2);
+  border: 1px solid var(--accent);
+}
+.addr-edit-row .mono-select { height: 40px; font-size: 12px; }
 
 .expiry {
   display: flex;
@@ -410,6 +425,8 @@ button.tool:hover { background: var(--tint); color: var(--accent); }
   flex-direction: column;
   gap: 18px;
 }
+.reader-actions { display: flex; gap: 8px; }
+.only-narrow { display: none; }
 .reader-title { display: flex; align-items: flex-start; gap: 30px; }
 .reader-head h2 {
   margin: 0;
@@ -674,6 +691,7 @@ button.tool:hover { background: var(--tint); color: var(--accent); }
   .workspace { grid-template-columns: 1fr; }
   .list-col { border-right: 0; border-bottom: 1px solid var(--line); max-height: 46vh; }
   .about-grid { grid-template-columns: repeat(2, 1fr); }
+  .only-narrow { display: inline-flex; }
 }
 @media (max-width: 720px) {
   .hdr, .tabs, .addr-main, .expiry, .toolbar .poll { padding-left: 20px; padding-right: 20px; }

@@ -6,9 +6,7 @@
   <title>Tempmail - Disposable Mail Terminal</title>
   <meta name="description" content="Disposable temporary email. No signup. New mail shows up on its own." />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='3.5' fill='%236d5bd0'/%3E%3Cpath d='M3,8L16,17L29,8' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" />
+  <link rel="stylesheet" href="./css/fonts.css" />
   <link rel="stylesheet" href="./css/style.css" />
   <script>
     try {
@@ -34,7 +32,7 @@
 
       <div class="statusline">
         <span class="dot" id="status-dot"></span>
-        <span id="status" data-i18n="status.starting">Booting</span>
+        <span id="status" role="status" aria-live="polite" data-i18n="status.starting">Booting</span>
       </div>
 
       <div class="hdr-right">
@@ -63,10 +61,22 @@
 
       <div class="addr-strip">
         <div class="addr-main">
-          <div class="addr-text">
+          <div class="addr-text" id="addr-view">
             <span class="kicker" data-i18n="addr.deliverTo">Deliver mail to</span>
             <span class="addr mono" id="address">-</span>
           </div>
+          <form class="addr-edit" id="addr-edit" hidden>
+            <span class="kicker" data-i18n="addr.pickName">Pick a name</span>
+            <div class="addr-edit-row">
+              <input id="addr-local" class="mono" type="text" spellcheck="false"
+                     autocomplete="off" autocapitalize="off" maxlength="32" />
+              <span class="addr-at mono">@</span>
+              <select id="addr-domain" class="mono-select"></select>
+            </div>
+          </form>
+          <button id="edit" class="btn-ghost" type="button" data-i18n="addr.edit">Edit</button>
+          <button id="edit-set" class="btn-ghost" type="button" data-i18n="addr.set" hidden>Set</button>
+          <button id="edit-cancel" class="btn-ghost" type="button" data-i18n="addr.cancel" hidden>Cancel</button>
           <button id="copy" class="btn-solid" data-i18n="addr.copy">Copy</button>
         </div>
 
