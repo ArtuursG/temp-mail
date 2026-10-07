@@ -6,3 +6,7 @@ venv/
 .DS_Store
 node_modules/
 dist/
+playwright-report/
+test-results/
+.pytest_cache/
+.ruff_cache/
