@@ -27,6 +27,17 @@ export function isSessionLost(err) {
   return !!err && (err.sessionLost === true || err.status === 401 || err.status === 403);
 }
 
+/**
+ * The provider itself is down or overloaded (5xx, 429, timeout, or a network /
+ * CORS failure - error replies usually lack CORS headers, so the browser only
+ * reports "Failed to fetch"). Worth trying another provider.
+ */
+export function isUnavailable(err) {
+  if (!err) return false;
+  if (err.status) return err.status >= 500 || err.status === 429;
+  return err instanceof TypeError || /timed out|unexpected response/i.test(String(err.message));
+}
+
 export function isRateLimit(err) {
   return !!err && (err.status === 429 || /\b429\b|rate.?limit|too many/i.test(String(err.message)));
 }

@@ -5,7 +5,7 @@ import {
   loadBackendProviders,
   DEFAULT_PROVIDER,
 } from "./providers/index.js";
-import { isRateLimit, isSessionLost } from "./providers/common.js";
+import { isRateLimit, isSessionLost, isUnavailable } from "./providers/common.js";
 import {
   LANGUAGES,
   applyStaticTranslations,
@@ -170,7 +170,8 @@ function adopt(inbox) {
 
 // Create a new address. The current one stays live until the new one exists,
 // so a failure (name taken, network down) leaves the user where they were.
-async function createInbox(providerId, opts = {}) {
+// With `fallback`, a provider that is down is skipped for the next one.
+async function createInbox(providerId, opts = {}, { fallback = false } = {}) {
   if (state.creating) return false;
   const provider = getProvider(providerId || DEFAULT_PROVIDER);
   state.creating = true;
@@ -179,14 +180,37 @@ async function createInbox(providerId, opts = {}) {
   renderHeader();
   renderList();
   try {
-    const created = await provider.createInbox(opts);
+    let created = null;
+    let used = provider;
+    try {
+      created = await provider.createInbox(opts);
+    } catch (err) {
+      if (!fallback || !isUnavailable(err)) throw err;
+      for (const alt of providers.filter((p) => p !== provider)) {
+        try {
+          created = await alt.createInbox(opts);
+          used = alt;
+          break;
+        } catch {
+          /* try the next one */
+        }
+      }
+      if (!created) throw err;
+    }
     if (state.inbox && !state.expired) pushHistory(state.inbox);
     adopt({ ...created, createdAt: Date.now(), lifetime: state.lifetime, seen: [] });
     await pollOnce();
     startPolling();
+    if (used !== provider) {
+      setStatus("status.fallback", { failed: provider.label, provider: used.label }, { notice: true });
+    }
     return true;
   } catch (err) {
-    setStatus("status.createFail", { error: err.message }, { notice: true });
+    if (isUnavailable(err)) {
+      setStatus("status.providerDown", { provider: provider.label }, { notice: true });
+    } else {
+      setStatus("status.createFail", { error: err.message }, { notice: true });
+    }
     return false;
   } finally {
     state.creating = false;
@@ -223,7 +247,7 @@ function burnInbox() {
   if (state.inbox) getProvider(state.inbox.provider).destroy(state.inbox.session).catch(() => {});
   writeJSON(STORAGE_KEY, null);
   adopt(null);
-  createInbox($("#provider").value);
+  createInbox($("#provider").value, {}, { fallback: true });
 }
 
 // The provider rejected the session for good: freeze like an expired address.
@@ -963,7 +987,7 @@ function initControls() {
   });
 
   $("#refresh").addEventListener("click", () => pollOnce({ manual: true }));
-  $("#new").addEventListener("click", () => createInbox($("#provider").value));
+  $("#new").addEventListener("click", () => createInbox($("#provider").value, {}, { fallback: true }));
   $("#burn").addEventListener("click", burnInbox);
   $("#history").addEventListener("change", (e) => {
     if (e.target.value) switchToHistory(e.target.value);
@@ -1021,7 +1045,7 @@ async function main() {
   renderAll();
 
   if (await resumeStored()) return;
-  await createInbox(DEFAULT_PROVIDER);
+  await createInbox(DEFAULT_PROVIDER, {}, { fallback: true });
 }
 
 main();

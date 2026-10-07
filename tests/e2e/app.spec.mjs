@@ -263,3 +263,26 @@ test("web app manifest and icons are served", async ({ request }) => {
     expect((await request.get(`/${icon.src}`)).ok(), icon.src).toBe(true);
   }
 });
+
+test("Mail.gw down: the page falls back to Guerrilla and says so", async ({ page, gw }) => {
+  gw.down = true;
+  await mockGuerrilla(page);
+  await page.goto("/");
+  await expect(page.locator("#address")).toHaveText(/@guerrillamailblock\.com$/);
+  await expect(page.locator("#status")).toHaveText("Mail.gw is not responding - switched to Guerrilla Mail");
+  await expect(page.locator("#provider")).toHaveValue("guerrilla");
+});
+
+test("explicitly picking a source that is down keeps the current address", async ({ page, gw }) => {
+  await mockGuerrilla(page);
+  await page.addInitScript(() => localStorage.setItem("tempmail:lang", "en"));
+  gw.down = true;
+  await page.goto("/");
+  const addr = await currentAddress(page); // fell back to Guerrilla
+  await page.selectOption("#provider", "mailgw");
+  await expect(page.locator("#status")).toHaveText(
+    "Mail.gw is not responding (server error) - try another source"
+  );
+  expect(await currentAddress(page)).toBe(addr);
+  await expect(page.locator("#provider")).toHaveValue("guerrilla");
+});
