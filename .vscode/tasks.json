@@ -1,0 +1,160 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Serve site (8000)",
+      "detail": "Static server for docs/ on http://127.0.0.1:8000",
+      "type": "npm",
+      "script": "serve",
+      "isBackground": true,
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": {
+        "owner": "serve",
+        "pattern": { "regexp": "^(?!)", "file": 1, "line": 1, "message": 1 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "scripts/serve\\.mjs",
+          "endsPattern": "serving docs/ on http://"
+        }
+      }
+    },
+    {
+      "label": "Unit tests",
+      "detail": "node --test tests/unit/*.test.mjs",
+      "type": "npm",
+      "script": "test",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "i18n check",
+      "detail": "Key parity, referenced keys, unused keys",
+      "type": "npm",
+      "script": "check:i18n",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "E2E tests",
+      "detail": "Playwright in Chromium, starts its own server on port 4173",
+      "type": "npm",
+      "script": "test:e2e",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "All frontend checks",
+      "detail": "Unit tests, i18n check, E2E tests",
+      "dependsOn": ["Unit tests", "i18n check", "E2E tests"],
+      "dependsOrder": "sequence",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+
+    {
+      "label": "Backend: create venv",
+      "detail": "python -m venv backend/.venv (skipped when it exists)",
+      "hide": true,
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "-c",
+        "import os, subprocess, sys; sys.exit(0 if os.path.isdir('.venv') else subprocess.call([sys.executable, '-m', 'venv', '.venv']))"
+      ],
+      "windows": { "command": "python" },
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Backend: create venv + install",
+      "detail": "backend/.venv, then pip install -r requirements-dev.txt",
+      "dependsOn": "Backend: create venv",
+      "type": "process",
+      "command": "${workspaceFolder}/backend/.venv/bin/python",
+      "args": ["-m", "pip", "install", "-r", "requirements-dev.txt"],
+      "windows": { "command": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe" },
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Backend: run (uvicorn)",
+      "detail": "FastAPI with --reload on http://127.0.0.1:8000 (serves docs/ too)",
+      "type": "process",
+      "command": "${workspaceFolder}/backend/.venv/bin/python",
+      "args": ["-m", "uvicorn", "app.main:app", "--reload", "--port", "8000"],
+      "windows": { "command": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe" },
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "uvicorn",
+        "pattern": { "regexp": "^(?!)", "file": 1, "line": 1, "message": 1 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Will watch for changes|Reloading\\.\\.\\.",
+          "endsPattern": "Application startup complete\\."
+        }
+      }
+    },
+    {
+      "label": "Backend: tests",
+      "detail": "pytest -q",
+      "type": "process",
+      "command": "${workspaceFolder}/backend/.venv/bin/python",
+      "args": ["-m", "pytest", "-q"],
+      "windows": { "command": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe" },
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Backend: ruff check",
+      "hide": true,
+      "type": "process",
+      "command": "${workspaceFolder}/backend/.venv/bin/python",
+      "args": ["-m", "ruff", "check", "--output-format=concise", "."],
+      "windows": { "command": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe" },
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": {
+        "owner": "backend-ruff-check",
+        "source": "ruff check",
+        "fileLocation": ["relative", "${workspaceFolder}/backend"],
+        "pattern": {
+          "regexp": "^(.+?):(\\d+):(\\d+): (\\S+?):? (.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "code": 4,
+          "message": 5
+        }
+      }
+    },
+    {
+      "label": "Backend: ruff format --check",
+      "hide": true,
+      "type": "process",
+      "command": "${workspaceFolder}/backend/.venv/bin/python",
+      "args": ["-m", "ruff", "format", "--check", "--output-format=concise", "."],
+      "windows": { "command": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe" },
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": {
+        "owner": "backend-ruff-format",
+        "source": "ruff format",
+        "fileLocation": ["relative", "${workspaceFolder}/backend"],
+        "pattern": {
+          "regexp": "^(.+?):(\\d+):(\\d+): (\\S+?):? (.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "code": 4,
+          "message": 5
+        }
+      }
+    },
+    {
+      "label": "Backend: lint",
+      "detail": "ruff check + ruff format --check (same as CI)",
+      "dependsOn": ["Backend: ruff check", "Backend: ruff format --check"],
+      "problemMatcher": []
+    }
+  ]
+}
