@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-import random
 import secrets
-import string
 from datetime import datetime
 from typing import Any
 
 import httpx
 
-from ..models import MessageFull, MessageSummary
-from .base import Provider, ProviderError
-
-_ALPHABET = string.ascii_lowercase + string.digits
-
-
-def _random_local_part() -> str:
-    length = random.randint(9, 14)
-    return "".join(secrets.choice(_ALPHABET) for _ in range(length))
+from ..models import Attachment, MessageFull, MessageSummary
+from .base import (
+    AddressTaken,
+    Provider,
+    ProviderError,
+    SessionExpired,
+    normalize_local_part,
+    random_local_part,
+)
 
 
 def _parse_dt(value: Any) -> datetime | None:
@@ -28,79 +26,115 @@ def _parse_dt(value: Any) -> datetime | None:
         return None
 
 
-class MailTmProvider(Provider):
-    """mail.tm un mail.gw - vienāda API, atšķiras tikai bāzes URL.
+def _detail(resp: httpx.Response) -> str:
+    try:
+        body = resp.json()
+    except ValueError:
+        return resp.reason_phrase or f"HTTP {resp.status_code}"
+    if isinstance(body, dict):
+        return str(
+            body.get("hydra:description") or body.get("message") or body.get("detail") or body
+        )
+    return str(body)
 
-    Plūsma: /domains -> POST /accounts -> POST /token -> GET /messages.
-    Pieejams bez maksas, bez atslēgas. Limits ~8 pieprasījumi/s uz IP.
+
+class MailTmProvider(Provider):
+    """mail.tm and mail.gw - the same API, only the base URL differs.
+
+    Flow: /domains -> POST /accounts -> POST /token -> GET /messages.
+    Free and keyless; rate-limited per IP.
     """
 
     name = "mailtm"
     label = "Mail.tm"
     base_url = "https://api.mail.tm"
+    retention_seconds = 7 * 24 * 3600
 
-    async def _pick_domain(self) -> str:
-        resp = await self.client.get(f"{self.base_url}/domains", params={"page": 1})
+    async def _request(self, method: str, path: str, **kw: Any) -> httpx.Response:
+        try:
+            return await self.client.request(method, f"{self.base_url}{path}", **kw)
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"{self.label}: network error ({exc})") from exc
+
+    async def domains(self) -> list[str]:
+        resp = await self._request("GET", "/domains", params={"page": 1})
         if resp.status_code != 200:
-            raise ProviderError(f"{self.label}: neizdevās saņemt domēnus ({resp.status_code})")
+            raise ProviderError(f"{self.label}: could not list domains ({resp.status_code})")
         data = resp.json()
         members = data.get("hydra:member") or data.get("member") or []
-        active = [d["domain"] for d in members if d.get("isActive", True) and not d.get("isPrivate")]
-        if not active:
-            raise ProviderError(f"{self.label}: nav aktīvu domēnu")
-        return random.choice(active)
+        return [d["domain"] for d in members if d.get("isActive", True) and not d.get("isPrivate")]
 
-    async def create_inbox(self) -> tuple[str, dict[str, Any]]:
-        domain = await self._pick_domain()
-        address = f"{_random_local_part()}@{domain}"
+    async def _create_account(self, address: str, password: str) -> str:
+        resp = await self._request(
+            "POST", "/accounts", json={"address": address, "password": password}
+        )
+        if resp.status_code in (200, 201):
+            return "ok"
+        detail = _detail(resp)
+        if resp.status_code == 422 and "already used" in detail.lower():
+            return "taken"
+        raise ProviderError(f"{self.label}: account creation failed ({detail})")
+
+    async def _login(self, address: str, password: str) -> dict[str, Any]:
+        resp = await self._request(
+            "POST", "/token", json={"address": address, "password": password}
+        )
+        if resp.status_code == 401:
+            raise SessionExpired(f"{self.label}: account no longer exists")
+        if resp.status_code != 200:
+            raise ProviderError(f"{self.label}: login failed ({_detail(resp)})")
+        return resp.json()
+
+    async def create_inbox(
+        self, local_part: str | None = None, domain: str | None = None
+    ) -> tuple[str, dict[str, Any]]:
+        domains = await self.domains()
+        if not domains:
+            raise ProviderError(f"{self.label}: no active domains")
+        if domain not in domains:
+            domain = secrets.choice(domains)
+        wanted = normalize_local_part(local_part)
         password = secrets.token_urlsafe(16)
 
-        acc = await self.client.post(
-            f"{self.base_url}/accounts",
-            json={"address": address, "password": password},
-        )
-        if acc.status_code == 422:
-            # ģenerētā adrese jau aizņemta - mēģinām vēlreiz vienu reizi
-            address = f"{_random_local_part()}@{domain}"
-            acc = await self.client.post(
-                f"{self.base_url}/accounts",
-                json={"address": address, "password": password},
-            )
-        if acc.status_code not in (200, 201):
-            raise ProviderError(f"{self.label}: konta izveide neizdevās ({acc.status_code})")
+        address = f"{wanted or random_local_part()}@{domain}"
+        created = await self._create_account(address, password)
+        if created == "taken":
+            if wanted:
+                raise AddressTaken(f"{self.label}: that address is already taken")
+            address = f"{random_local_part()}@{domain}"
+            created = await self._create_account(address, password)
+        if created != "ok":
+            raise ProviderError(f"{self.label}: could not create an account")
 
-        tok = await self.client.post(
-            f"{self.base_url}/token",
-            json={"address": address, "password": password},
-        )
-        if tok.status_code != 200:
-            raise ProviderError(f"{self.label}: token neizdevās ({tok.status_code})")
-
-        payload = tok.json()
+        token = await self._login(address, password)
         session = {
             "address": address,
             "password": password,
-            "token": payload["token"],
-            "account_id": payload.get("id", ""),
+            "token": token["token"],
+            "account_id": token.get("id", ""),
         }
         return address, session
 
-    def _auth(self, session: dict[str, Any]) -> dict[str, str]:
-        return {"Authorization": f"Bearer {session['token']}"}
+    async def _authed(self, session: dict[str, Any], method: str, path: str) -> httpx.Response:
+        """Authenticated call; on 401 log in again with the stored password, once."""
+        for attempt in (1, 2):
+            resp = await self._request(
+                method, path, headers={"Authorization": f"Bearer {session['token']}"}
+            )
+            if resp.status_code != 401 or attempt == 2:
+                break
+            token = await self._login(session["address"], session["password"])
+            session["token"] = token["token"]
+        if resp.status_code == 401:
+            raise SessionExpired(f"{self.label}: session expired")
+        return resp
 
     async def list_messages(self, session: dict[str, Any]) -> list[MessageSummary]:
-        resp = await self.client.get(
-            f"{self.base_url}/messages",
-            params={"page": 1},
-            headers=self._auth(session),
-        )
-        if resp.status_code == 401:
-            raise ProviderError(f"{self.label}: sesija beigusies")
+        resp = await self._authed(session, "GET", "/messages?page=1")
         if resp.status_code != 200:
-            raise ProviderError(f"{self.label}: vēstuļu saraksts neizdevās ({resp.status_code})")
-        members = resp.json().get("hydra:member", [])
+            raise ProviderError(f"{self.label}: listing messages failed ({resp.status_code})")
         out: list[MessageSummary] = []
-        for m in members:
+        for m in resp.json().get("hydra:member", []):
             frm = m.get("from") or {}
             out.append(
                 MessageSummary(
@@ -116,14 +150,14 @@ class MailTmProvider(Provider):
             )
         return out
 
-    async def get_message(self, session: dict[str, Any], message_id: str) -> MessageFull:
-        resp = await self.client.get(
-            f"{self.base_url}/messages/{message_id}",
-            headers=self._auth(session),
-        )
+    async def _raw_message(self, session: dict[str, Any], message_id: str) -> dict[str, Any]:
+        resp = await self._authed(session, "GET", f"/messages/{message_id}")
         if resp.status_code != 200:
-            raise ProviderError(f"{self.label}: vēstule neatrasta ({resp.status_code})")
-        m = resp.json()
+            raise ProviderError(f"{self.label}: message not found ({resp.status_code})")
+        return resp.json()
+
+    async def get_message(self, session: dict[str, Any], message_id: str) -> MessageFull:
+        m = await self._raw_message(session, message_id)
         frm = m.get("from") or {}
         html = m.get("html") or []
         return MessageFull(
@@ -137,18 +171,46 @@ class MailTmProvider(Provider):
             has_attachments=bool(m.get("hasAttachments")),
             text=m.get("text", ""),
             html="\n".join(html) if isinstance(html, list) else str(html),
+            attachments=[
+                Attachment(
+                    id=str(a.get("id")),
+                    filename=a.get("filename") or "attachment",
+                    size=int(a.get("size") or 0),
+                    content_type=a.get("contentType") or "",
+                )
+                for a in m.get("attachments") or []
+                if a.get("id")
+            ],
         )
+
+    async def download_attachment(
+        self, session: dict[str, Any], message_id: str, attachment_id: str
+    ) -> tuple[bytes, str, str]:
+        # Use the downloadUrl the API hands out rather than guessing its format.
+        m = await self._raw_message(session, message_id)
+        att = next(
+            (a for a in m.get("attachments") or [] if str(a.get("id")) == attachment_id), None
+        )
+        if not att or not att.get("downloadUrl"):
+            raise ProviderError(f"{self.label}: attachment not found")
+        resp = await self._authed(session, "GET", att["downloadUrl"])
+        if resp.status_code != 200:
+            raise ProviderError(f"{self.label}: attachment download failed ({resp.status_code})")
+        content_type = att.get("contentType") or "application/octet-stream"
+        return resp.content, content_type, att.get("filename") or "attachment"
+
+    async def delete_message(self, session: dict[str, Any], message_id: str) -> None:
+        resp = await self._authed(session, "DELETE", f"/messages/{message_id}")
+        if resp.status_code not in (200, 204, 404):
+            raise ProviderError(f"{self.label}: delete failed ({resp.status_code})")
 
     async def delete_inbox(self, session: dict[str, Any]) -> None:
         account_id = session.get("account_id")
         if not account_id:
             return
         try:
-            await self.client.delete(
-                f"{self.base_url}/accounts/{account_id}",
-                headers=self._auth(session),
-            )
-        except httpx.HTTPError:
+            await self._authed(session, "DELETE", f"/accounts/{account_id}")
+        except ProviderError:
             pass
 
 
