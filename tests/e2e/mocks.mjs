@@ -16,6 +16,7 @@ export async function mockMailGw(page) {
     full: new Map(), // id -> full message
     taken: new Set(),
     listStatus: null, // force GET /messages to answer with this status
+    down: false, // outage: every call answers 502 without CORS headers, like a real gateway error
     calls: [],
     count(prefix) {
       return this.calls.filter((c) => c.startsWith(prefix)).length;
@@ -48,6 +49,7 @@ export async function mockMailGw(page) {
     const path = new URL(req.url()).pathname;
     const json = (status, body) =>
       route.fulfill({ status, headers: CORS, contentType: "application/json", body: JSON.stringify(body) });
+    if (st.down) return route.fulfill({ status: 502, contentType: "text/html", body: "<h1>502 Bad Gateway</h1>" });
     if (method === "OPTIONS") return route.fulfill({ status: 204, headers: CORS });
     st.calls.push(`${method} ${path}`);
 

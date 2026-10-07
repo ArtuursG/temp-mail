@@ -16,6 +16,8 @@ export const DICTS = {
     "status.syncing": "Checking for mail",
     "status.error": "Link error: {error}",
     "status.createFail": "Address request failed: {error}",
+    "status.providerDown": "{provider} is not responding (server error) - try another source",
+    "status.fallback": "{failed} is not responding - switched to {provider}",
 
     "meta.session": "{provider} - session ok",
     "meta.opening": "opening session",
@@ -187,6 +189,8 @@ export const DICTS = {
     "status.syncing": "Pārbauda pastu",
     "status.error": "Savienojuma kļūda: {error}",
     "status.createFail": "Adreses pieprasījums neizdevās: {error}",
+    "status.providerDown": "{provider} nav pieejams (servera kļūda) - pamēģini citu avotu",
+    "status.fallback": "{failed} nav pieejams - pārslēgts uz {provider}",
 
     "meta.session": "{provider} - sesija ok",
     "meta.opening": "atver sesiju",
@@ -358,6 +362,8 @@ export const DICTS = {
     "status.syncing": "Prüfe auf Mail",
     "status.error": "Verbindungsfehler: {error}",
     "status.createFail": "Adressanfrage fehlgeschlagen: {error}",
+    "status.providerDown": "{provider} antwortet nicht (Serverfehler) - andere Quelle versuchen",
+    "status.fallback": "{failed} antwortet nicht - zu {provider} gewechselt",
 
     "meta.session": "{provider} - Sitzung ok",
     "meta.opening": "Sitzung wird geöffnet",
@@ -529,6 +535,8 @@ export const DICTS = {
     "status.syncing": "Comprobando correo",
     "status.error": "Error de conexión: {error}",
     "status.createFail": "Falló la solicitud de dirección: {error}",
+    "status.providerDown": "{provider} no responde (error del servidor) - prueba otra fuente",
+    "status.fallback": "{failed} no responde - cambiado a {provider}",
 
     "meta.session": "{provider} - sesión ok",
     "meta.opening": "abriendo sesión",

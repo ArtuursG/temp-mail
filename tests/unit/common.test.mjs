@@ -5,6 +5,7 @@ import {
   httpError,
   isRateLimit,
   isSessionLost,
+  isUnavailable,
   jfetch,
   looksLikeHtml,
   normalizeLocalPart,
@@ -81,4 +82,13 @@ test("esc / escSrcdoc / fmtSize", () => {
   assert.equal(fmtSize(512), "512 B");
   assert.equal(fmtSize(2048), "2 KB");
   assert.equal(fmtSize(5 * 1024 * 1024), "5.0 MB");
+});
+
+test("isUnavailable: outages yes, client errors no", () => {
+  assert.equal(isUnavailable(httpError(502, "Bad Gateway")), true);
+  assert.equal(isUnavailable(httpError(429, "Too Many Requests")), true);
+  assert.equal(isUnavailable(new TypeError("Failed to fetch")), true); // CORS-less error reply
+  assert.equal(isUnavailable(new Error("request timed out after 15s")), true);
+  assert.equal(isUnavailable(httpError(422, "already used")), false);
+  assert.equal(isUnavailable(new Error("Mail.gw: that address is already taken")), false);
 });
