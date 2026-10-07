@@ -122,7 +122,12 @@ a:hover { color: var(--ink); }
 .hdr-rule { width: 1px; height: 30px; background: var(--line); }
 
 .statusline { display: flex; align-items: center; gap: 9px; }
+.statusline { min-width: 0; }
 .statusline span:last-child {
+  max-width: 52ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font: 400 11px/1 "Geist Mono", monospace;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -254,6 +259,11 @@ a.tab:hover { color: var(--accent); }
   border: 1px solid var(--accent);
 }
 .addr-edit-row .mono-select { height: 40px; font-size: 12px; }
+.addr-warn {
+  font: 400 11px/1.5 "Geist Mono", monospace;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
 
 .expiry {
   display: flex;
@@ -281,6 +291,7 @@ a.tab:hover { color: var(--accent); }
 .toolbar {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   border-bottom: 1px solid var(--line);
   background: var(--panel2);
@@ -304,6 +315,7 @@ button.tool:hover { background: var(--tint); color: var(--accent); }
 .tool.accent { color: var(--accent); }
 .tool.source { color: var(--muted); font-weight: 400; letter-spacing: 0.18em; cursor: default; }
 .tool.source .mono-select { height: 24px; }
+#history { max-width: 210px; }
 .tool.busy { background: var(--tint); color: var(--accent); }
 .poll {
   display: flex;
@@ -349,11 +361,19 @@ button.tool:hover { background: var(--tint); color: var(--accent); }
   flex: none;
   display: grid;
   grid-template-columns: 26px 1fr;
+  width: 100%;
+  margin: 0;
   padding: 15px 18px 15px 0;
+  border: 0;
   border-bottom: 1px solid var(--line2);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 .row:hover { background: var(--row-hover); }
+.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .row.active { background: var(--row-active); box-shadow: inset 2px 0 0 var(--accent); }
 .row-dot { display: flex; justify-content: center; padding-top: 4px; }
 .row-dot span { width: 7px; height: 7px; background: transparent; }
@@ -507,6 +527,17 @@ button.tool:hover { background: var(--tint); color: var(--accent); }
   color: var(--muted);
   text-align: right;
 }
+
+.link-box .link-host {
+  min-width: 0;
+  font: 500 18px/1.2 "Geist Mono", monospace;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-box a.btn-ghost { flex: none; display: inline-flex; align-items: center; color: var(--accent); }
+.link-box a.btn-ghost:hover { border-color: var(--accent); }
 
 .att-chip {
   display: flex;
@@ -706,17 +737,23 @@ button.tool:hover { background: var(--tint); color: var(--accent); }
 @media (max-width: 1080px) {
   .hdr { flex-wrap: wrap; gap: 14px 18px; }
   .hdr-right { width: 100%; margin-left: 0; flex-wrap: wrap; }
-  .addr-strip { grid-template-columns: 1fr; }
+  .addr-strip { grid-template-columns: minmax(0, 1fr); }
   .addr-main { border-right: 0; border-bottom: 1px solid var(--line); }
-  .workspace { grid-template-columns: 1fr; }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
   .list-col { border-right: 0; border-bottom: 1px solid var(--line); max-height: 46vh; }
   .about-grid { grid-template-columns: repeat(2, 1fr); }
-  .only-narrow { display: inline-flex; }
+  .only-narrow { display: inline-flex; align-items: center; }
 }
 @media (max-width: 720px) {
+  .code-box { flex-wrap: wrap; gap: 14px; }
+  .code-box .code-label { margin-left: 0; width: 100%; text-align: left; order: -1; }
   .hdr, .tabs, .addr-main, .expiry, .toolbar .poll { padding-left: 20px; padding-right: 20px; }
-  .toolbar { flex-wrap: wrap; }
-  .addr { font-size: 24px; }
+  .addr { font-size: 24px; white-space: normal; overflow-wrap: anywhere; }
+  .addr-main { flex-wrap: wrap; gap: 12px; }
+  .addr-text, .addr-edit { flex: 1 1 100%; margin-right: 0; }
+  .addr-edit-row { flex-wrap: wrap; }
+  .addr-edit-row .mono-select { max-width: 100%; }
+  #copy { flex: 1; height: 44px; }
   .reader-head, .reader-body { padding-left: 24px; padding-right: 24px; }
   .about-inner { padding: 36px 20px 56px; }
   .about-row { grid-template-columns: 1fr; gap: 8px; }
