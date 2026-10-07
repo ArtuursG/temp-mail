@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import random
+import secrets
 
 import httpx
 
+from ..models import ProviderInfo
 from .base import Provider
 from .guerrilla import GuerrillaProvider
 from .mailtm import MailGwProvider, MailTmProvider
 
-_PROVIDER_CLASSES = [MailTmProvider, MailGwProvider, GuerrillaProvider]
+_PROVIDER_CLASSES: list[type[Provider]] = [MailTmProvider, MailGwProvider, GuerrillaProvider]
 
 
 class ProviderRegistry:
@@ -19,13 +20,21 @@ class ProviderRegistry:
                 continue
             self._providers[cls.name] = cls(client)
         if not self._providers:
-            raise RuntimeError("Nav aktivizēts neviens providers")
+            raise RuntimeError("No provider enabled - check ENABLED_PROVIDERS")
 
     def names(self) -> list[str]:
         return list(self._providers)
 
-    def info(self) -> list[dict[str, str]]:
-        return [{"name": p.name, "label": p.label} for p in self._providers.values()]
+    def info(self) -> list[ProviderInfo]:
+        return [
+            ProviderInfo(
+                name=p.name,
+                label=p.label,
+                retention_seconds=p.retention_seconds,
+                public_inboxes=p.public_inboxes,
+            )
+            for p in self._providers.values()
+        ]
 
     def get(self, name: str) -> Provider:
         if name not in self._providers:
@@ -33,4 +42,4 @@ class ProviderRegistry:
         return self._providers[name]
 
     def random(self) -> Provider:
-        return random.choice(list(self._providers.values()))
+        return secrets.choice(list(self._providers.values()))
