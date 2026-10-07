@@ -1,4 +1,11 @@
-import { providers, getProvider, DEFAULT_PROVIDER } from "./providers/index.js";
+import {
+  providers,
+  getProvider,
+  hasProvider,
+  loadBackendProviders,
+  DEFAULT_PROVIDER,
+} from "./providers/index.js";
+import { isRateLimit, isSessionLost } from "./providers/common.js";
 import {
   LANGUAGES,
   applyStaticTranslations,
@@ -9,148 +16,320 @@ import {
   t,
 } from "./i18n.js";
 import { initTheme } from "./theme.js";
+import { extractTextLinks, findCode, pickActionLink } from "./lib/detect.js";
+import { esc, escSrcdoc, fmtSize } from "./lib/format.js";
 
 const STORAGE_KEY = "tempmail:inbox:v1";
+const HISTORY_KEY = "tempmail:history:v1";
+const LIFETIME_KEY = "tempmail:lifetime";
+const NOTIFY_KEY = "tempmail:notify";
+const LIFETIMES = ["600", "1800", "3600", "max"];
+const HISTORY_MAX = 5;
+const SEEN_MAX = 200;
+const NOTICE_MS = 8000; // how long an error from a user action stays in the status line
+const BASE_TITLE = document.title;
+
 const $ = (s) => document.querySelector(s);
 const pad = (n) => String(n).padStart(2, "0");
 
 const state = {
-  inbox: null, // { provider, address, session, createdAt }
+  inbox: null, // { provider, address, session, createdAt, lifetime, seen: [] }
+  gen: 0, // bumped whenever the inbox changes; async results from an older gen are dropped
   messages: [],
   seen: new Set(),
+  deleted: new Set(), // deleted locally; hidden even if the server-side delete failed
+  primed: false, // first poll of this inbox done - only mail after that triggers alerts
   activeId: null,
   activeMessage: null,
-  tab: "inbox",
+  pollLoop: null,
   pollTimer: null,
   clockTimer: null,
-  loading: false,
+  pollingGen: -1, // gen of the poll in flight, so a stale request can't block a new inbox
+  creating: false,
   rateLimitedUntil: 0,
   expired: false,
-  lifetime: readLifetime(), // "600" | "1800" | "3600" | "max"
-  status: { key: "status.starting", vars: null, busy: false },
+  lifetime: readPref(LIFETIME_KEY, LIFETIMES, "3600"),
+  notify: false,
+  history: [],
+  status: { key: "status.starting", vars: null, until: 0 },
+  listHtml: "",
 };
 
-function readLifetime() {
-  try {
-    const v = localStorage.getItem("tempmail:lifetime");
-    return ["600", "1800", "3600", "max"].includes(v) ? v : "3600";
-  } catch {
-    return "3600";
-  }
-}
-function lifetimeSeconds(provider) {
-  const cap = provider?.retentionSeconds || 3600;
-  return state.lifetime === "max" ? cap : Math.min(Number(state.lifetime), cap);
-}
-
 /* ---------- persistence ---------- */
-function saveInbox() {
-  if (state.inbox) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.inbox));
-    } catch {}
-  }
-}
-function loadStoredInbox() {
+function readJSON(key) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
-function clearStoredInbox() {
+function writeJSON(key, value) {
   try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {}
+    if (value == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* storage blocked or full - the app still works for this tab */
+  }
+}
+function readPref(key, allowed, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    return allowed.includes(v) ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function writePref(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* ignore */
+  }
+}
+
+function saveInbox() {
+  if (!state.inbox || state.expired) return;
+  state.inbox.seen = [...state.seen].slice(-SEEN_MAX);
+  writeJSON(STORAGE_KEY, state.inbox);
+}
+
+/* ---------- lifetime ---------- */
+function lifetimeSeconds(inbox) {
+  const cap = getProvider(inbox.provider).retentionSeconds || 3600;
+  const choice = inbox.lifetime || state.lifetime;
+  return choice === "max" ? cap : Math.min(Number(choice), cap);
+}
+function secondsLeft(inbox) {
+  return lifetimeSeconds(inbox) - (Date.now() - inbox.createdAt) / 1000;
 }
 
 /* ---------- status ---------- */
-function setStatus(key, vars = null, busy = false) {
-  state.status = { key, vars, busy };
+// The status text is an aria-live region: only touch it when the text really
+// changes, or screen readers announce every background poll.
+function setStatus(key, vars = null, { notice = false } = {}) {
+  state.status = { key, vars, until: notice ? Date.now() + NOTICE_MS : 0 };
   renderStatus();
 }
 function renderStatus() {
-  $("#status").textContent = t(state.status.key, state.status.vars);
-  $("#status-dot").classList.toggle("busy", state.status.busy);
+  const text = t(state.status.key, state.status.vars);
+  const el = $("#status");
+  if (el.textContent !== text) {
+    el.textContent = text;
+    el.title = text; // the line is truncated on narrow headers
+  }
+}
+function setBusy(on) {
+  $("#status-dot").classList.toggle("busy", on);
+}
+function unreadCount() {
+  return state.messages.filter(isUnread).length;
+}
+function isUnread(m) {
+  return !m.seen && !state.seen.has(m.id);
+}
+function renderLiveStatus() {
+  const unread = unreadCount();
+  document.title = unread && !state.expired ? `(${unread}) ${BASE_TITLE}` : BASE_TITLE;
+  if (state.expired) return; // keep the expired / session-lost message
+  if (state.creating) return; // "Requesting address" until the new one is in
+  if (state.status.until > Date.now()) return; // let an error notice be read first
+  if (!state.messages.length) setStatus("status.liveNoMail");
+  else if (unread) setStatus("status.liveUnread", { n: unread });
+  else setStatus("status.live");
 }
 
 /* ---------- inbox lifecycle ---------- */
-async function createInbox(providerId, opts = {}) {
+// Make `inbox` the current one: fresh view state, then start its clock.
+function adopt(inbox) {
   stopPolling();
-  stopClock();
-  setStatus("status.generating", null, true);
-  state.inbox = null; // so the clock/poll can't act on the old one mid-request
+  state.gen++;
+  if (inbox) {
+    // The selector shows (and sets) the current address's lifetime.
+    if (!LIFETIMES.includes(inbox.lifetime)) inbox.lifetime = state.lifetime;
+    state.lifetime = inbox.lifetime;
+    $("#lifetime").value = inbox.lifetime;
+    writePref(LIFETIME_KEY, inbox.lifetime);
+  }
+  state.inbox = inbox;
   state.messages = [];
-  state.seen = new Set();
+  state.seen = new Set(inbox?.seen || []);
+  state.deleted = new Set();
+  state.primed = false;
   state.activeId = null;
   state.activeMessage = null;
   state.rateLimitedUntil = 0;
   state.expired = false;
-  document.querySelector(".app")?.classList.remove("expired");
-  renderList();
-  renderReader();
+  $(".app").classList.remove("expired");
+  closeAddressEdit();
+  saveInbox();
+  renderAll();
+  if (inbox) startClock();
+  else stopClock();
+}
+
+// Create a new address. The current one stays live until the new one exists,
+// so a failure (name taken, network down) leaves the user where they were.
+async function createInbox(providerId, opts = {}) {
+  if (state.creating) return false;
+  const provider = getProvider(providerId || DEFAULT_PROVIDER);
+  state.creating = true;
+  setBusy(true);
+  setStatus("status.generating");
   renderHeader();
+  renderList();
   try {
-    const provider = getProvider(providerId || DEFAULT_PROVIDER);
-    const inbox = await provider.createInbox(opts);
-    state.inbox = { ...inbox, createdAt: Date.now() };
-    saveInbox();
-    renderHeader();
-    startClock();
+    const created = await provider.createInbox(opts);
+    if (state.inbox && !state.expired) pushHistory(state.inbox);
+    adopt({ ...created, createdAt: Date.now(), lifetime: state.lifetime, seen: [] });
     await pollOnce();
     startPolling();
     return true;
   } catch (err) {
-    setStatus("status.createFail", { error: err.message });
+    setStatus("status.createFail", { error: err.message }, { notice: true });
+    return false;
+  } finally {
+    state.creating = false;
+    setBusy(state.pollingGen !== -1);
     renderHeader();
     renderList();
-    return false;
+    if (state.status.key === "status.generating") renderLiveStatus();
   }
 }
 
-async function resumeInbox(stored) {
-  state.inbox = stored;
-  renderHeader();
-  try {
-    await getProvider(stored.provider).listMessages(stored.session);
-    startClock();
-    await pollOnce();
-    startPolling();
-    return true;
-  } catch {
-    clearStoredInbox();
-    state.inbox = null;
+// Pick up the inbox saved by an earlier visit. Only a rejected session throws
+// it away; being offline or rate-limited keeps the address and retries.
+async function resumeStored() {
+  const stored = readJSON(STORAGE_KEY);
+  if (!stored || !stored.session || !stored.address || !hasProvider(stored.provider)) {
+    writeJSON(STORAGE_KEY, null);
     return false;
   }
+  if (secondsLeft(stored) <= 0) {
+    getProvider(stored.provider).destroy(stored.session).catch(() => {});
+    writeJSON(STORAGE_KEY, null);
+    return false;
+  }
+  adopt(stored);
+  if ((await pollOnce()) === "lost") return false;
+  startPolling();
+  return true;
 }
 
 function burnInbox() {
-  if (!state.inbox) return;
-  getProvider(state.inbox.provider).destroy(state.inbox.session).catch(() => {});
-  clearStoredInbox();
-  state.inbox = null;
+  if (state.creating) return;
+  const n = state.messages.length;
+  if (state.inbox && !state.expired && n && !window.confirm(t("confirm.burn", { n }))) return;
+  if (state.inbox) getProvider(state.inbox.provider).destroy(state.inbox.session).catch(() => {});
+  writeJSON(STORAGE_KEY, null);
+  adopt(null);
   createInbox($("#provider").value);
+}
+
+// The provider rejected the session for good: freeze like an expired address.
+function sessionLost() {
+  stopPolling();
+  state.expired = true;
+  writeJSON(STORAGE_KEY, null);
+  $(".app").classList.add("expired");
+  document.title = BASE_TITLE;
+  setStatus("status.sessionLost");
+}
+
+/* ---------- history ---------- */
+function loadHistory() {
+  const list = readJSON(HISTORY_KEY);
+  state.history = Array.isArray(list) ? list : [];
+  pruneHistory();
+}
+// Drop entries past their lifetime (and delete them upstream, like an expiring
+// current address), entries for providers this page doesn't have, and overflow.
+function pruneHistory() {
+  const keep = [];
+  for (const h of state.history) {
+    if (!h || !h.session || !h.address || !hasProvider(h.provider)) continue;
+    if (secondsLeft(h) <= 0 || keep.length >= HISTORY_MAX) {
+      getProvider(h.provider).destroy(h.session).catch(() => {});
+      continue;
+    }
+    keep.push(h);
+  }
+  state.history = keep;
+  writeJSON(HISTORY_KEY, keep.length ? keep : null);
+}
+function pushHistory(inbox) {
+  if (inbox === state.inbox) inbox.seen = [...state.seen].slice(-SEEN_MAX);
+  state.history = [{ ...inbox }, ...state.history.filter((h) => h.address !== inbox.address)];
+  pruneHistory();
+  renderHistory();
+}
+async function switchToHistory(address) {
+  const entry = state.history.find((h) => h.address === address);
+  if (!entry || state.creating) return;
+  const provider = getProvider(entry.provider);
+  state.creating = true;
+  setBusy(true);
+  setStatus("status.syncing");
+  let incoming;
+  try {
+    incoming = await listWithReauth(provider, entry.session); // validate before swapping
+  } catch (err) {
+    if (isSessionLost(err)) {
+      state.history = state.history.filter((h) => h !== entry);
+      pruneHistory();
+      setStatus("status.sessionLost", null, { notice: true });
+    } else {
+      setStatus("status.error", { error: err.message }, { notice: true });
+    }
+    return;
+  } finally {
+    state.creating = false;
+    setBusy(false);
+    renderHistory();
+  }
+  state.history = state.history.filter((h) => h !== entry);
+  if (state.inbox && !state.expired) pushHistory(state.inbox);
+  else pruneHistory();
+  adopt(entry);
+  applyMessages(incoming);
+  saveInbox();
+  startPolling();
+}
+function renderHistory() {
+  const sel = $("#history");
+  $("#history-wrap").hidden = !state.history.length;
+  sel.innerHTML =
+    `<option value="">-</option>` +
+    state.history.map((h) => `<option value="${esc(h.address)}">${esc(h.address)}</option>`).join("");
+  sel.value = "";
 }
 
 /* ---------- polling + clock ---------- */
 // Self-scheduling loop so the delay can grow when a provider rate-limits us.
+// Each loop has its own token, so a stopped loop can't reschedule itself.
 function startPolling() {
   stopPolling();
-  scheduleNextPoll();
+  if (!state.inbox || state.expired) return;
+  const loop = {};
+  state.pollLoop = loop;
+  scheduleNextPoll(loop);
 }
 function stopPolling() {
+  state.pollLoop = null;
   if (state.pollTimer) clearTimeout(state.pollTimer);
   state.pollTimer = null;
 }
-function scheduleNextPoll() {
-  if (!state.inbox || state.expired) return;
+function scheduleNextPoll(loop) {
+  if (loop !== state.pollLoop || !state.inbox || state.expired) return;
   const base = getProvider(state.inbox.provider).pollInterval || 5000;
-  const throttled = state.rateLimitedUntil > Date.now();
-  const delay = throttled ? Math.max(base, 20000) : base;
+  let delay = base;
+  if (state.rateLimitedUntil > Date.now()) delay = Math.max(base, 20000);
+  else if (document.hidden) delay = Math.max(base * 3, 15000);
   state.pollTimer = setTimeout(async () => {
-    if (!document.hidden) await pollOnce();
-    scheduleNextPoll();
+    // A hidden tab keeps polling only when alerts are on - that is the case
+    // where someone is waiting in another tab for the notification.
+    if (!document.hidden || state.notify) await pollOnce();
+    scheduleNextPoll(loop);
   }, delay);
 }
 function startClock() {
@@ -163,32 +342,40 @@ function stopClock() {
   state.clockTimer = null;
 }
 
-function isRateLimit(err) {
-  return /\b429\b|rate.?limit|too many/i.test(String(err && err.message));
+async function listWithReauth(provider, session) {
+  try {
+    return await provider.listMessages(session);
+  } catch (err) {
+    if (!isSessionLost(err) || !provider.reauth) throw err;
+    await provider.reauth(session);
+    return provider.listMessages(session);
+  }
 }
 
-async function pollOnce() {
-  if (!state.inbox || state.loading || state.expired) return;
-  state.loading = true;
-  const provider = getProvider(state.inbox.provider);
-  const wasBusy = state.status.busy;
-  if (!wasBusy) setStatus("status.syncing", null, true);
+// One mailbox check. Returns "ok" | "lost" | "error" | "skip".
+async function pollOnce({ manual = false } = {}) {
+  const inbox = state.inbox;
+  const gen = state.gen;
+  if (!inbox || state.expired || state.pollingGen === gen) return "skip";
+  state.pollingGen = gen;
+  setBusy(true);
+  if (manual) setStatus("status.syncing");
+  const stale = () => gen !== state.gen || state.expired;
   try {
-    const incoming = await provider.listMessages(state.inbox.session);
-    if (state.rateLimitedUntil) {
-      state.rateLimitedUntil = 0;
-      renderHeader();
-    }
-    saveInbox();
-    const known = new Set(state.messages.map((m) => m.id));
-    const fresh = incoming.filter((m) => !known.has(m.id));
-    state.messages = incoming.sort(
-      (a, b) => new Date(b.date || 0) - new Date(a.date || 0)
-    );
-    renderList();
-    if (fresh.length && known.size) notify(fresh[0]);
-    renderLiveStatus();
+    const incoming = await listWithReauth(getProvider(inbox.provider), inbox.session);
+    if (stale()) return "skip";
+    const wasThrottled = state.rateLimitedUntil > 0;
+    state.rateLimitedUntil = 0;
+    if (wasThrottled) renderHeader();
+    applyMessages(incoming);
+    saveInbox(); // Guerrilla rotates sid_token, Mail.gw may have re-logged in
+    return "ok";
   } catch (err) {
+    if (stale()) return "skip";
+    if (isSessionLost(err)) {
+      sessionLost();
+      return "lost";
+    }
     if (isRateLimit(err)) {
       state.rateLimitedUntil = Date.now() + 60000;
       setStatus("status.throttled");
@@ -196,45 +383,100 @@ async function pollOnce() {
     } else {
       setStatus("status.error", { error: err.message });
     }
+    return "error";
   } finally {
-    state.loading = false;
+    if (state.pollingGen === gen) state.pollingGen = -1;
+    setBusy(state.creating || state.pollingGen !== -1);
   }
 }
 
-function renderLiveStatus() {
-  const unread = state.messages.filter((m) => !state.seen.has(m.id)).length;
-  if (!state.messages.length) setStatus("status.liveNoMail");
-  else if (unread) setStatus("status.liveUnread", { n: unread });
-  else setStatus("status.live");
+function applyMessages(incoming) {
+  const known = new Set(state.messages.map((m) => m.id));
+  const list = incoming
+    .filter((m) => !state.deleted.has(m.id))
+    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  const fresh = list.filter((m) => !known.has(m.id) && isUnread(m));
+  state.messages = list;
+  if (state.primed && fresh.length) notify(fresh[0], fresh.length);
+  state.primed = true;
+  renderList();
+  renderLiveStatus();
 }
 
-function notify(msg) {
-  const N = window.Notification;
-  if (!N || N.permission !== "granted") return;
-  new N(msg.subject || t("reader.noSubject"), {
-    body: `${t("reader.from")} ${msg.from}`,
-  });
+/* ---------- notifications ---------- */
+function notificationsSupported() {
+  return typeof window.Notification === "function";
+}
+function initNotify() {
+  const btn = $("#notify");
+  if (!notificationsSupported()) {
+    btn.hidden = true;
+    return;
+  }
+  let pref = null;
+  try {
+    pref = localStorage.getItem(NOTIFY_KEY);
+  } catch {
+    /* ignore */
+  }
+  // No stored choice yet: an already granted permission means "on" (old behaviour).
+  state.notify = Notification.permission === "granted" && pref !== "0";
+  renderNotify();
+}
+function renderNotify() {
+  const btn = $("#notify");
+  if (btn.hidden) return;
+  const blocked = Notification.permission === "denied";
+  btn.textContent = t(state.notify ? "notify.on" : blocked ? "notify.blocked" : "notify.off");
+  btn.classList.toggle("on", state.notify);
+  btn.setAttribute("aria-pressed", String(state.notify));
+}
+async function toggleNotify() {
+  if (!notificationsSupported()) return;
+  if (state.notify) {
+    state.notify = false;
+  } else {
+    let perm = Notification.permission;
+    if (perm === "default") perm = await Notification.requestPermission();
+    state.notify = perm === "granted";
+  }
+  writePref(NOTIFY_KEY, state.notify ? "1" : "0");
+  renderNotify();
+}
+function notify(msg, count) {
+  if (!state.notify || !notificationsSupported() || Notification.permission !== "granted") return;
+  const from = msg.fromName || msg.from;
+  const more = count > 1 ? ` (+${count - 1})` : "";
+  try {
+    const n = new Notification(msg.subject || t("reader.noSubject"), {
+      body: `${t("reader.from")} ${from}${more}`,
+      tag: "tempmail",
+    });
+    const gen = state.gen;
+    n.onclick = () => {
+      window.focus();
+      setTab("inbox");
+      if (gen === state.gen) openMessage(msg.id);
+      n.close();
+    };
+  } catch {
+    /* some mobile browsers only allow notifications from a service worker */
+  }
 }
 
 /* ---------- rendering: header / clock ---------- */
 function renderHeader() {
   const i = state.inbox;
-  const addr = i ? i.address : "-";
-  $("#address").textContent = state.status.busy && !i ? "· · · · · · · ·" : addr;
-  $("#foot-addr").textContent = i ? addr : "";
-  $("#provider").value = i ? i.provider : DEFAULT_PROVIDER;
+  const prov = getProvider(i?.provider ?? DEFAULT_PROVIDER);
+  $("#address").textContent = i ? i.address : state.creating ? "· · · · · · · ·" : "-";
+  $("#foot-addr").textContent = i ? i.address : "";
+  const sel = $("#provider");
+  if (!state.creating && sel.value !== prov.id) sel.value = prov.id;
   $("#poll-text").textContent =
     state.rateLimitedUntil > Date.now()
       ? t("toolbar.throttled")
-      : t("toolbar.poll", {
-          n: Math.round(
-            (getProvider(i?.provider ?? DEFAULT_PROVIDER).pollInterval || 5000) / 1000
-          ),
-        });
-  $("#meta").textContent = i
-    ? t("meta.session", { provider: getProvider(i.provider).label })
-    : t("meta.opening");
-  const prov = getProvider(i?.provider ?? DEFAULT_PROVIDER);
+      : t("toolbar.poll", { n: Math.round((prov.pollInterval || 5000) / 1000) });
+  $("#meta").textContent = i ? t("meta.session", { provider: prov.label }) : t("meta.opening");
   const provRetention = prov.retentionKey ? t(prov.retentionKey) : prov.retention || "1h";
   $("#cta-note").textContent = t("about.ctaNote", { retention: provRetention });
   const maxOpt = document.querySelector('#lifetime option[value="max"]');
@@ -246,15 +488,19 @@ function renderClock() {
   const clock = $("#expiry-clock");
   const bar = $("#expiry-bar");
   const note = $("#expiry-note");
+  const track = $("#expiry-track");
   if (!i) {
     clock.textContent = "--:--";
     bar.style.width = "100%";
+    track.setAttribute("aria-valuenow", "100");
     return;
   }
-  const total = lifetimeSeconds(getProvider(i.provider));
-  const left = Math.max(0, total - (Date.now() - i.createdAt) / 1000);
+  const total = lifetimeSeconds(i);
+  const left = state.expired ? 0 : Math.max(0, secondsLeft(i));
+  const pct = Math.round((left / total) * 100);
   bar.style.width = `${(left / total) * 100}%`;
   bar.classList.toggle("low", left < 300);
+  track.setAttribute("aria-valuenow", String(pct));
   if (left <= 0) {
     clock.textContent = "00:00";
     note.textContent = t("expiry.expired");
@@ -269,15 +515,16 @@ function renderClock() {
   clock.textContent = d > 0 ? `${d}d ${pad(h)}:${pad(m)}` : `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
-// Address hit its chosen lifetime: stop polling and drop the token.
+// Address hit its chosen lifetime: stop polling and delete it upstream.
 function freezeExpired() {
   state.expired = true;
   stopPolling();
   setStatus("status.expired");
-  document.querySelector(".app")?.classList.add("expired");
+  $(".app").classList.add("expired");
+  document.title = BASE_TITLE;
   if (state.inbox) {
     getProvider(state.inbox.provider).destroy(state.inbox.session).catch(() => {});
-    clearStoredInbox();
+    writeJSON(STORAGE_KEY, null);
   }
 }
 
@@ -309,57 +556,62 @@ function renderList() {
     ? t("list.held", { n: pad(state.messages.length) })
     : "";
 
+  let html;
   if (!state.messages.length) {
-    const gen = state.status.busy;
-    el.innerHTML = `
+    const gen = state.creating && !state.inbox;
+    html = `
       <div class="list-empty">
         <div class="box"></div>
         <span class="t">${esc(t(gen ? "list.emptyTitleGen" : "list.emptyTitle"))}</span>
         <span class="b">${esc(t(gen ? "list.emptyBodyGen" : "list.emptyBody"))}</span>
       </div>`;
-    return;
-  }
-
-  el.innerHTML = state.messages
-    .map((m) => {
-      const unread = !state.seen.has(m.id);
-      return `
-      <div class="row${m.id === state.activeId ? " active" : ""}${unread ? " unread" : ""}" data-id="${esc(m.id)}">
-        <div class="row-dot"><span></span></div>
-        <div class="row-body">
-          <div class="row-top">
+  } else {
+    html = state.messages
+      .map((m) => {
+        const unread = isUnread(m);
+        const active = m.id === state.activeId;
+        return `
+      <button type="button" class="row${active ? " active" : ""}${unread ? " unread" : ""}" data-id="${esc(m.id)}"${active ? ' aria-current="true"' : ""}>
+        <span class="row-dot"><span></span></span>
+        <span class="row-body">
+          <span class="row-top">
             <span class="row-from">${esc(m.fromName || m.from || "unknown")}</span>
             <span class="row-time">${esc(fmtWhen(m.date))}</span>
-          </div>
-          <span class="row-subject">${esc(m.subject || t("reader.noSubject"))}</span>
+          </span>
+          <span class="row-subject">${unread ? `<span class="sr-label">${esc(t("list.unread"))}: </span>` : ""}${esc(m.subject || t("reader.noSubject"))}</span>
           <span class="row-intro">${esc(m.intro || "")}</span>
-        </div>
-      </div>`;
-    })
-    .join("");
-  el.querySelectorAll(".row").forEach((r) =>
-    r.addEventListener("click", () => openMessage(r.dataset.id))
-  );
+        </span>
+      </button>`;
+      })
+      .join("");
+  }
+  // Polls re-render every few seconds; skip the DOM swap when nothing changed
+  // so focus and hover survive, and put focus back when something did.
+  if (html === state.listHtml) return;
+  state.listHtml = html;
+  const focused = el.contains(document.activeElement) ? document.activeElement.dataset.id : null;
+  el.innerHTML = html;
+  if (focused) el.querySelector(`.row[data-id="${CSS.escape(focused)}"]`)?.focus();
+}
+
+function onListKey(e) {
+  const row = e.target.closest(".row");
+  if (!row) return;
+  const rows = [...$("#msg-list").querySelectorAll(".row")];
+  const i = rows.indexOf(row);
+  const next = {
+    ArrowDown: rows[i + 1],
+    ArrowUp: rows[i - 1],
+    Home: rows[0],
+    End: rows[rows.length - 1],
+  }[e.key];
+  if (next) {
+    e.preventDefault();
+    next.focus();
+  }
 }
 
 /* ---------- rendering: reader ---------- */
-const CODE_KW =
-  /(verif|confirm|one[- ]?time|\botp\b|\bpin\b|\bcode\b|2fa|two.?factor|security code|access code|login code)/i;
-
-function findCode(subject, text) {
-  const hay = `${subject}\n${text}`;
-  const grouped = hay.match(/\b(\d{3}[ -]\d{3}|\d{4}[ -]\d{4})\b/);
-  if (CODE_KW.test(hay)) {
-    if (grouped) return grouped[1];
-    const digits = hay.match(/\b(\d{4,8})\b/);
-    if (digits) return digits[1];
-    const alnum = hay.match(/\b([A-Z0-9]{6,8})\b/);
-    if (alnum && /\d/.test(alnum[1]) && /[A-Z]/.test(alnum[1])) return alnum[1];
-  }
-  const iso = text.match(/(?:^|\n)\s*(\d{6})\s*(?:\r?\n|$)/);
-  return iso ? iso[1] : grouped ? grouped[1] : null;
-}
-
 function textToParas(text) {
   return String(text || "")
     .replace(/\r\n/g, "\n")
@@ -369,33 +621,63 @@ function textToParas(text) {
     .slice(0, 40);
 }
 
-// Plain-text view of an HTML body, so code detection works on HTML-only mail.
-function htmlToText(html) {
+// Plain text and links of an HTML body, so code / link detection works on
+// HTML-only mail. DOMParser documents are inert: no scripts run, nothing loads.
+function parseHtml(html) {
   try {
     const doc = new DOMParser().parseFromString(String(html), "text/html");
     doc.querySelectorAll("script, style, head, title").forEach((n) => n.remove());
-    return (doc.body?.textContent || "")
-      .replace(/[ \t]+/g, " ")
+    const links = [...doc.querySelectorAll("a[href]")].map((a) => ({
+      href: a.getAttribute("href") || "",
+      text: a.textContent || "",
+    }));
+    doc.querySelectorAll("br").forEach((n) => n.replaceWith("\n"));
+    doc
+      .querySelectorAll("p, div, tr, td, th, li, h1, h2, h3, h4, h5, h6, table, blockquote, pre")
+      .forEach((n) => n.append("\n"));
+    const text = (doc.body?.textContent || "")
+      .replace(/[ \t ]+/g, " ")
+      .replace(/ *\n */g, "\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
+    return { text, links };
   } catch {
-    return "";
+    return { text: "", links: [] };
   }
 }
 
+// Code + action link, computed once per opened message.
+function analyse(m) {
+  const parsed = m.html ? parseHtml(m.html) : { text: "", links: [] };
+  const text = m.text || parsed.text;
+  return {
+    code: findCode(m.subject || "", text),
+    link: pickActionLink([...parsed.links, ...extractTextLinks(text)]),
+  };
+}
+
 async function openMessage(id) {
+  if (!state.inbox) return;
+  const gen = state.gen;
   state.activeId = id;
-  state.seen.add(id);
+  state.activeMessage = null;
+  if (!state.seen.has(id)) {
+    state.seen.add(id);
+    saveInbox();
+  }
   renderList();
   renderLiveStatus();
   $("#reader").innerHTML = `<div class="reader-empty"><span>${esc(t("reader.loading"))}</span></div>`;
+  if (window.matchMedia?.("(max-width: 1080px)").matches) {
+    $("#reader").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   try {
-    state.activeMessage = await getProvider(state.inbox.provider).getMessage(
-      state.inbox.session,
-      id
-    );
+    const msg = await getProvider(state.inbox.provider).getMessage(state.inbox.session, id);
+    if (gen !== state.gen || state.activeId !== id) return; // user moved on meanwhile
+    state.activeMessage = { ...msg, ...analyse(msg) };
     renderReader();
   } catch (err) {
+    if (gen !== state.gen || state.activeId !== id) return;
     $("#reader").innerHTML = `<div class="reader-empty"><span>${esc(
       t("reader.error", { error: err.message })
     )}</span></div>`;
@@ -413,8 +695,7 @@ function renderReader() {
     return;
   }
 
-  const scanText = m.text || (m.html ? htmlToText(m.html) : "");
-  const code = findCode(m.subject || "", scanText);
+  const { code, link } = m;
   const atts = m.attachments || [];
 
   let body;
@@ -424,9 +705,10 @@ function renderReader() {
     const framed =
       `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; ` +
       `style-src 'unsafe-inline'; img-src data:; media-src data:; font-src data:">` +
+      `<meta name="referrer" content="no-referrer">` +
       `<base target="_blank">` +
       m.html;
-    body = `<iframe sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" srcdoc="${escSrcdoc(
+    body = `<iframe title="${esc(t("reader.frameTitle"))}" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" srcdoc="${escSrcdoc(
       framed
     )}"></iframe>`;
   } else {
@@ -439,8 +721,16 @@ function renderReader() {
   const codeBox = code
     ? `<div class="code-box">
          <span class="code">${esc(code)}</span>
-         <button class="btn-ghost" id="copy-code">${esc(t("code.copy"))}</button>
+         <button class="btn-ghost" type="button" id="copy-code">${esc(t("code.copy"))}</button>
          <span class="code-label">${esc(t("code.title"))}</span>
+       </div>`
+    : "";
+
+  const linkBox = link
+    ? `<div class="code-box link-box">
+         <span class="link-host mono">${esc(link.host)}</span>
+         <a class="btn-ghost" href="${esc(link.href)}" target="_blank" rel="noopener noreferrer">${esc(t("link.open"))}</a>
+         <span class="code-label">${esc(t("link.title"))}</span>
        </div>`
     : "";
 
@@ -453,7 +743,7 @@ function renderReader() {
           <span class="att-name">${esc(a.filename)}</span>
           <span class="att-size">${esc(fmtSize(a.size))}</span>
         </div>
-        ${a.url ? `<button class="att-save" data-att="${idx}">${esc(t("att.save"))}</button>` : ""}
+        ${a.url ? `<button class="att-save" type="button" data-att="${idx}">${esc(t("att.save"))}</button>` : ""}
       </div>`
     )
     .join("");
@@ -461,8 +751,8 @@ function renderReader() {
   el.innerHTML = `
     <div class="reader-head">
       <div class="reader-actions">
-        <button class="btn-ghost only-narrow" id="back-to-list">${esc(t("reader.backToList"))}</button>
-        <button class="btn-ghost" id="del-msg">${esc(t("reader.delete"))}</button>
+        <button class="btn-ghost only-narrow" type="button" id="back-to-list">${esc(t("reader.backToList"))}</button>
+        <button class="btn-ghost" type="button" id="del-msg">${esc(t("reader.delete"))}</button>
       </div>
       <div class="reader-title">
         <h2>${esc(m.subject || t("reader.noSubject"))}</h2>
@@ -477,31 +767,46 @@ function renderReader() {
     </div>
     <div class="reader-body">
       <div class="reader-body-inner">
-        ${body}
         ${codeBox}
+        ${linkBox}
+        ${body}
         ${attBox}
         <div class="reader-note">${esc(t("reader.blocked"))}</div>
       </div>
     </div>`;
 
   $("#back-to-list")?.addEventListener("click", () => {
+    const row = document.querySelector(`.row[data-id="${CSS.escape(m.id)}"]`);
     document.querySelector(".list-col")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    row?.focus({ preventScroll: true });
   });
   $("#del-msg")?.addEventListener("click", () => deleteMessage(m.id));
 
   const cc = $("#copy-code");
-  if (cc)
-    cc.addEventListener("click", () => {
-      navigator.clipboard?.writeText(code.replace(/\s/g, "")).catch(() => {});
-      cc.textContent = t("code.copied");
-      setTimeout(() => (cc.textContent = t("code.copy")), 1400);
-    });
+  if (cc) cc.addEventListener("click", () => copyText(code.replace(/\s/g, ""), cc, "code.copy", "code.copied"));
   el.querySelectorAll(".att-save").forEach((b) =>
     b.addEventListener("click", () => saveAttachment(atts[+b.dataset.att]))
   );
 }
 
+async function copyText(text, btn, idleKey, doneKey) {
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch {
+    /* no clipboard API (insecure context) or permission denied */
+  }
+  btn.textContent = t(ok ? doneKey : "addr.copyFail");
+  btn.classList.toggle("copied", ok);
+  setTimeout(() => {
+    btn.textContent = t(idleKey);
+    btn.classList.remove("copied");
+  }, 1400);
+}
+
 async function saveAttachment(att) {
+  if (!state.inbox || !att) return;
   try {
     const provider = getProvider(state.inbox.provider);
     const blob = await provider.downloadAttachment?.(state.inbox.session, att);
@@ -512,21 +817,17 @@ async function saveAttachment(att) {
     a.download = att.filename || "attachment";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  } catch {
-    /* ignore */
+  } catch (err) {
+    setStatus("status.attFail", { error: err.message }, { notice: true });
   }
-}
-
-function fmtSize(n) {
-  n = Number(n) || 0;
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 async function deleteMessage(id) {
   if (!state.inbox) return;
   const provider = getProvider(state.inbox.provider);
+  const rows = [...document.querySelectorAll("#msg-list .row")];
+  const nextId = rows[rows.findIndex((r) => r.dataset.id === id) + 1]?.dataset.id;
+  state.deleted.add(id);
   state.messages = state.messages.filter((m) => m.id !== id);
   if (state.activeId === id) {
     state.activeId = null;
@@ -535,6 +836,11 @@ async function deleteMessage(id) {
   renderList();
   renderReader();
   renderLiveStatus();
+  // keep keyboard users in the list instead of dropping focus on <body>
+  const focusTarget =
+    (nextId && document.querySelector(`.row[data-id="${CSS.escape(nextId)}"]`)) ||
+    document.querySelector("#msg-list .row");
+  focusTarget?.focus();
   try {
     await provider.deleteMessage?.(state.inbox.session, id);
   } catch {
@@ -543,19 +849,22 @@ async function deleteMessage(id) {
 }
 
 /* ---------- address editing ---------- */
-async function openAddressEdit() {
-  if (!state.inbox) return;
+async function openAddressEdit(prefill = null) {
+  if (!state.inbox || state.creating) return;
   const provider = getProvider(state.inbox.provider);
+  const [curLocal, curDomain] = state.inbox.address.split("@");
   const sel = $("#addr-domain");
-  let domains = [state.inbox.address.split("@")[1]];
+  let domains = [curDomain];
   try {
     domains = (await provider.domains?.()) || domains;
   } catch {
     /* keep current */
   }
+  if (!domains.includes(curDomain)) domains = [curDomain, ...domains];
   sel.innerHTML = domains.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
-  sel.value = state.inbox.address.split("@")[1];
-  $("#addr-local").value = state.inbox.address.split("@")[0];
+  sel.value = prefill?.domain && domains.includes(prefill.domain) ? prefill.domain : curDomain;
+  $("#addr-local").value = prefill?.local ?? curLocal;
+  $("#addr-warn").hidden = !provider.publicInboxes;
   $("#addr-view").hidden = true;
   $("#addr-edit").hidden = false;
   $("#edit").hidden = true;
@@ -565,54 +874,68 @@ async function openAddressEdit() {
   $("#addr-local").select();
 }
 function closeAddressEdit() {
+  const wasOpen = !$("#addr-edit").hidden;
   $("#addr-view").hidden = false;
   $("#addr-edit").hidden = true;
   $("#edit").hidden = false;
   $("#edit-set").hidden = true;
   $("#edit-cancel").hidden = true;
+  if (wasOpen && $("#addr-edit").contains(document.activeElement)) $("#edit").focus();
 }
 async function submitAddressEdit() {
+  if (!state.inbox) return;
   const local = $("#addr-local").value.trim();
   const domain = $("#addr-domain").value;
   if (!local) return;
+  if (`${local.toLowerCase()}@${domain}` === state.inbox.address) {
+    closeAddressEdit();
+    return;
+  }
   closeAddressEdit();
-  await createInbox(state.inbox.provider, { localPart: local, domain });
+  const ok = await createInbox(state.inbox.provider, { localPart: local, domain });
+  if (!ok) openAddressEdit({ local, domain }); // let them try another name
 }
 
 /* ---------- tabs ---------- */
-function setTab(name) {
-  state.tab = name;
-  document.querySelectorAll(".tab").forEach((b) =>
-    b.classList.toggle("active", b.dataset.tab === name)
-  );
+function setTab(name, { focus = false } = {}) {
+  document.querySelectorAll(".tab[data-tab]").forEach((b) => {
+    const on = b.dataset.tab === name;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", String(on));
+    b.tabIndex = on ? 0 : -1;
+    if (on && focus) b.focus();
+  });
   $("#panel-inbox").hidden = name !== "inbox";
   $("#panel-about").hidden = name !== "about";
 }
+function onTabKey(e) {
+  const tabs = [...document.querySelectorAll(".tab[data-tab]")];
+  const i = tabs.indexOf(e.target);
+  if (i < 0) return;
+  const next = { ArrowRight: tabs[i + 1] || tabs[0], ArrowLeft: tabs[i - 1] || tabs[tabs.length - 1] }[
+    e.key
+  ];
+  if (next) {
+    e.preventDefault();
+    setTab(next.dataset.tab, { focus: true });
+  }
+}
 
 /* ---------- misc ---------- */
-function esc(s) {
-  return String(s ?? "").replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
-  );
-}
-// srcdoc value is un-escaped then parsed as HTML: only & and " must be encoded.
-function escSrcdoc(s) {
-  return String(s ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-}
-
-function rerenderDynamic() {
+function renderAll() {
   renderStatus();
   renderHeader();
   renderClock();
   renderList();
   renderReader();
+  renderHistory();
+  renderNotify();
 }
 
 /* ---------- wiring ---------- */
 function initControls() {
   $("#provider").innerHTML = providers
-    .map((p) => `<option value="${p.id}">${p.label}</option>`)
+    .map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`)
     .join("");
   $("#lang").innerHTML = LANGUAGES.map(
     (l) => `<option value="${l.code}">${l.label}</option>`
@@ -625,64 +948,65 @@ function initControls() {
   $("#lifetime").value = state.lifetime;
   $("#lifetime").addEventListener("change", (e) => {
     state.lifetime = e.target.value;
-    try {
-      localStorage.setItem("tempmail:lifetime", state.lifetime);
-    } catch {}
+    writePref(LIFETIME_KEY, state.lifetime);
+    // A live address takes the new lifetime. An expired one stays dead (it was
+    // already deleted upstream) - the choice then applies to the next address.
+    if (state.inbox && !state.expired) {
+      state.inbox.lifetime = state.lifetime;
+      saveInbox();
+    }
     renderClock();
   });
 
-  $("#copy").addEventListener("click", async () => {
-    if (!state.inbox) return;
-    await navigator.clipboard.writeText(state.inbox.address).catch(() => {});
-    const b = $("#copy");
-    b.textContent = t("addr.copied");
-    b.classList.add("copied");
-    setTimeout(() => {
-      b.textContent = t("addr.copy");
-      b.classList.remove("copied");
-    }, 1400);
+  $("#copy").addEventListener("click", () => {
+    if (state.inbox) copyText(state.inbox.address, $("#copy"), "addr.copy", "addr.copied");
   });
 
-  $("#refresh").addEventListener("click", pollOnce);
+  $("#refresh").addEventListener("click", () => pollOnce({ manual: true }));
   $("#new").addEventListener("click", () => createInbox($("#provider").value));
   $("#burn").addEventListener("click", burnInbox);
+  $("#history").addEventListener("change", (e) => {
+    if (e.target.value) switchToHistory(e.target.value);
+  });
 
-  $("#edit").addEventListener("click", openAddressEdit);
+  $("#edit").addEventListener("click", () => openAddressEdit());
   $("#edit-cancel").addEventListener("click", closeAddressEdit);
   $("#edit-set").addEventListener("click", submitAddressEdit);
   $("#addr-edit").addEventListener("submit", (e) => {
     e.preventDefault();
     submitAddressEdit();
   });
-  $("#addr-local").addEventListener("keydown", (e) => {
+  $("#addr-edit").addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeAddressEdit();
   });
 
-  $("#notify").addEventListener("click", async () => {
-    const N = window.Notification;
-    if (!N) return;
-    let perm = N.permission;
-    if (perm === "default") perm = await N.requestPermission();
-    const on = perm === "granted";
-    const b = $("#notify");
-    b.textContent = t(on ? "notify.on" : "notify.off");
-    b.classList.toggle("on", on);
-  });
+  $("#notify").addEventListener("click", toggleNotify);
 
-  document.querySelectorAll(".tab").forEach((b) =>
-    b.addEventListener("click", () => setTab(b.dataset.tab))
-  );
+  const list = $("#msg-list");
+  list.addEventListener("click", (e) => {
+    const row = e.target.closest(".row");
+    if (row) openMessage(row.dataset.id);
+  });
+  list.addEventListener("keydown", onListKey);
+
+  document.querySelectorAll(".tab[data-tab]").forEach((b) => {
+    b.addEventListener("click", () => setTab(b.dataset.tab));
+    b.addEventListener("keydown", onTabKey);
+  });
   document.querySelectorAll("[data-tab-jump]").forEach((b) =>
-    b.addEventListener("click", () => setTab(b.dataset.tabJump))
+    b.addEventListener("click", () => setTab(b.dataset.tabJump, { focus: true }))
   );
 
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && state.inbox) pollOnce();
+    if (document.hidden || !state.inbox || state.expired) return;
+    pollOnce();
+    startPolling(); // drop the slower hidden-tab delay
   });
 
   onLangChange(() => {
     $("#lang").value = getLang();
-    rerenderDynamic();
+    state.listHtml = "";
+    renderAll();
   });
 }
 
@@ -690,14 +1014,13 @@ async function main() {
   initLang();
   applyStaticTranslations();
   initTheme();
+  await loadBackendProviders();
   initControls();
-  renderHeader();
-  renderClock();
-  renderList();
-  renderReader();
+  initNotify();
+  loadHistory();
+  renderAll();
 
-  const stored = loadStoredInbox();
-  if (stored && (await resumeInbox(stored))) return;
+  if (await resumeStored()) return;
   await createInbox(DEFAULT_PROVIDER);
 }
 

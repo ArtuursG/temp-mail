@@ -1,7 +1,8 @@
 // Minimal i18n: flat key dictionaries, {placeholder} interpolation, and a
-// helper that fills [data-i18n] / [data-i18n-title] / [data-i18n-ph] in the DOM.
+// helper that fills [data-i18n] / [data-i18n-title] / [data-i18n-ph] /
+// [data-i18n-aria] in the DOM.
 
-const DICTS = {
+export const DICTS = {
   en: {
     "brand.tagline": "Disposable mail terminal",
     "nav.inbox": "Inbox",
@@ -13,8 +14,8 @@ const DICTS = {
     "status.liveNoMail": "Live - no mail yet",
     "status.liveUnread": "Live - {n} unread",
     "status.syncing": "Checking for mail",
-    "status.error": "Link error",
-    "status.createFail": "Address request failed",
+    "status.error": "Link error: {error}",
+    "status.createFail": "Address request failed: {error}",
 
     "meta.session": "{provider} - session ok",
     "meta.opening": "opening session",
@@ -28,12 +29,10 @@ const DICTS = {
     "expiry.expired": "Expired - burn and get a fresh one",
 
     "toolbar.refresh": "Refresh",
-    "toolbar.refreshing": "Checking",
     "toolbar.new": "New address",
     "toolbar.burn": "Burn it",
     "toolbar.source": "Source",
     "toolbar.poll": "auto-poll {n}s",
-    "toolbar.syncing": "syncing",
 
     "list.header": "Sender / subject",
     "list.held": "{n} held",
@@ -133,7 +132,7 @@ const DICTS = {
     "privacy.title": "Privacy",
     "privacy.intro": "Tempmail is a static page. It has no backend of its own, no database, and no user accounts. This document describes what the page does and does not do with data. Last updated 2026-08-28.",
     "privacy.s1t": "What stays in your browser",
-    "privacy.s1b": "Your current temporary address, the provider session token, and your language and theme choice are kept in this browser’s local storage. They never leave your device through this page. Clearing site data, or pressing “Burn it”, removes them.",
+    "privacy.s1b": "Your current temporary address, up to five recent ones, their provider session tokens, which messages you opened, and your language, theme, lifetime and alert choices are kept in this browser’s local storage. They never leave your device through this page. “Burn it” deletes the current address, recent ones are deleted when their lifetime runs out, and clearing site data removes everything.",
     "privacy.s2t": "What goes to third parties",
     "privacy.s2b": "Mail is fetched directly by your browser from the disposable-mail provider you select, Mail.gw or Guerrilla Mail. Those requests carry your IP address and browser headers to that provider, and the provider stores the messages sent to your address. Their privacy policies and retention rules apply to that data, not this page’s. Fonts are served from this page’s own files, with no third-party font request.",
     "privacy.s3t": "What this page does not do",
@@ -161,6 +160,18 @@ const DICTS = {
     "addr.pickName": "Pick a name",
     "reader.delete": "Delete",
     "reader.backToList": "Messages",
+    "notify.blocked": "Alerts blocked",
+    "status.sessionLost": "Session lost - get a fresh address",
+    "status.attFail": "Could not save attachment: {error}",
+    "addr.copyFail": "Copy failed",
+    "addr.domain": "Domain",
+    "addr.publicWarn": "Guerrilla inboxes are public: anyone who types this name can read its mail.",
+    "link.title": "Confirmation link",
+    "link.open": "Open link",
+    "reader.frameTitle": "Message body",
+    "confirm.burn": "Burn this address and its {n} messages? This cannot be undone.",
+    "history.label": "Recent",
+    "list.unread": "Unread",
   },
 
   lv: {
@@ -174,8 +185,8 @@ const DICTS = {
     "status.liveNoMail": "Tiešraidē - vēstuļu vēl nav",
     "status.liveUnread": "Tiešraidē - {n} nelasītas",
     "status.syncing": "Pārbauda pastu",
-    "status.error": "Savienojuma kļūda",
-    "status.createFail": "Adreses pieprasījums neizdevās",
+    "status.error": "Savienojuma kļūda: {error}",
+    "status.createFail": "Adreses pieprasījums neizdevās: {error}",
 
     "meta.session": "{provider} - sesija ok",
     "meta.opening": "atver sesiju",
@@ -189,12 +200,10 @@ const DICTS = {
     "expiry.expired": "Beigusies - iznīcini un ņem jaunu",
 
     "toolbar.refresh": "Atsvaidzināt",
-    "toolbar.refreshing": "Pārbauda",
     "toolbar.new": "Jauna adrese",
     "toolbar.burn": "Iznīcināt",
     "toolbar.source": "Avots",
     "toolbar.poll": "auto-aptauja {n}s",
-    "toolbar.syncing": "sinhronizē",
 
     "list.header": "Sūtītājs / temats",
     "list.held": "{n} glabājas",
@@ -294,7 +303,7 @@ const DICTS = {
     "privacy.title": "Privātums",
     "privacy.intro": "Tempmail ir statiska lapa. Tai nav sava servera puses risinājuma, datubāzes vai lietotāju kontu. Šajā dokumentā aprakstīts, ko lapa dara un nedara ar datiem. Pēdējo reizi atjaunināts 2026-08-28.",
     "privacy.s1t": "Kas paliek jūsu pārlūkprogrammā",
-    "privacy.s1b": "Jūsu pašreizējā pagaidu adrese, pakalpojuma sniedzēja sesijas marķieris, kā arī valodas un dizaina tēmas izvēle tiek glabāta šīs pārlūkprogrammas lokālajā krātuvē. Izmantojot šo lapu, tie nekad netiek nosūtīti ārpus jūsu ierīces. Tos var noņemt, notīrot vietnes datus vai nospiežot «Iznīcināt».",
+    "privacy.s1b": "Jūsu pašreizējā pagaidu adrese, līdz piecām nesenām adresēm, to sesijas marķieri, atvērto vēstuļu saraksts, kā arī valodas, tēmas, derīguma termiņa un paziņojumu izvēle tiek glabāta šīs pārlūkprogrammas lokālajā krātuvē. Izmantojot šo lapu, tie nekad netiek nosūtīti ārpus jūsu ierīces. «Iznīcināt» izdzēš pašreizējo adresi, nesenās tiek izdzēstas, kad beidzas to termiņš, bet vietnes datu notīrīšana izdzēš visu.",
     "privacy.s2t": "Kas tiek nosūtīts trešajām pusēm",
     "privacy.s2b": "Jūsu pārlūkprogramma e-pastu saņem tieši no jūsu izvēlētā pagaidu e-pasta pakalpojuma sniedzēja - Mail.gw vai Guerrilla Mail. Šie pieprasījumi pakalpojuma sniedzējam nodod jūsu IP adresi un pārlūkprogrammas galvenes, un pakalpojuma sniedzējs glabā uz jūsu adresi nosūtītos ziņojumus. Uz šiem datiem attiecas attiecīgā pakalpojuma sniedzēja privātuma politika un datu glabāšanas noteikumi, nevis šīs lapas noteikumi. Fonti tiek ielādēti no šīs lapas failiem, neveicot pieprasījumus trešo pušu fontu pakalpojumiem.",
     "privacy.s3t": "Ko šī lapa nedara",
@@ -322,6 +331,18 @@ const DICTS = {
     "addr.pickName": "Izvēlies vārdu",
     "reader.delete": "Dzēst",
     "reader.backToList": "Vēstules",
+    "notify.blocked": "Paziņojumi bloķēti",
+    "status.sessionLost": "Sesija zaudēta - paņem jaunu adresi",
+    "status.attFail": "Neizdevās saglabāt pielikumu: {error}",
+    "addr.copyFail": "Neizdevās",
+    "addr.domain": "Domēns",
+    "addr.publicWarn": "Guerrilla iesūtnes ir publiskas: ikviens, kurš ievada šo vārdu, var lasīt tās vēstules.",
+    "link.title": "Apstiprinājuma saite",
+    "link.open": "Atvērt saiti",
+    "reader.frameTitle": "Vēstules saturs",
+    "confirm.burn": "Iznīcināt šo adresi un tās {n} vēstules? To nevar atsaukt.",
+    "history.label": "Nesenās",
+    "list.unread": "Nelasīta",
   },
 
   de: {
@@ -335,8 +356,8 @@ const DICTS = {
     "status.liveNoMail": "Live - noch keine Mail",
     "status.liveUnread": "Live - {n} ungelesen",
     "status.syncing": "Prüfe auf Mail",
-    "status.error": "Verbindungsfehler",
-    "status.createFail": "Adressanfrage fehlgeschlagen",
+    "status.error": "Verbindungsfehler: {error}",
+    "status.createFail": "Adressanfrage fehlgeschlagen: {error}",
 
     "meta.session": "{provider} - Sitzung ok",
     "meta.opening": "Sitzung wird geöffnet",
@@ -350,12 +371,10 @@ const DICTS = {
     "expiry.expired": "Abgelaufen - verbrennen und neu holen",
 
     "toolbar.refresh": "Aktualisieren",
-    "toolbar.refreshing": "Prüfe",
     "toolbar.new": "Neue Adresse",
     "toolbar.burn": "Verbrennen",
     "toolbar.source": "Quelle",
     "toolbar.poll": "Auto-Abruf {n}s",
-    "toolbar.syncing": "synchronisiere",
 
     "list.header": "Absender / Betreff",
     "list.held": "{n} gehalten",
@@ -455,7 +474,7 @@ const DICTS = {
     "privacy.title": "Datenschutz",
     "privacy.intro": "Tempmail ist eine statische Seite. Sie verfügt über kein eigenes Backend, keine Datenbank und keine Benutzerkonten. Dieses Dokument beschreibt, was die Seite mit Daten tut und was nicht. Zuletzt aktualisiert am 2026-08-28.",
     "privacy.s1t": "Was in Ihrem Browser bleibt",
-    "privacy.s1b": "Ihre aktuelle temporäre Adresse, das Sitzungstoken des Anbieters sowie Ihre Sprach- und Designauswahl werden im lokalen Speicher dieses Browsers gespeichert. Über diese Seite verlassen diese Daten niemals Ihr Gerät. Durch das Löschen der Websitedaten oder durch Drücken von „Verbrennen“ werden sie entfernt.",
+    "privacy.s1b": "Ihre aktuelle temporäre Adresse, bis zu fünf zuletzt genutzte Adressen, deren Sitzungstokens, welche Nachrichten Sie geöffnet haben, sowie Ihre Auswahl für Sprache, Design, Lebensdauer und Hinweise werden im lokalen Speicher dieses Browsers gespeichert. Über diese Seite verlassen diese Daten niemals Ihr Gerät. „Verbrennen“ löscht die aktuelle Adresse, zuletzt genutzte werden gelöscht, wenn ihre Lebensdauer abläuft, und das Löschen der Websitedaten entfernt alles.",
     "privacy.s2t": "Was an Dritte übermittelt wird",
     "privacy.s2b": "E-Mails werden von Ihrem Browser direkt beim von Ihnen gewählten Anbieter für temporäre E-Mail-Adressen abgerufen, Mail.gw oder Guerrilla Mail. Diese Anfragen übermitteln Ihre IP-Adresse und Browser-Header an den jeweiligen Anbieter, und der Anbieter speichert die an Ihre Adresse gesendeten Nachrichten. Für diese Daten gelten die Datenschutzrichtlinien und Aufbewahrungsregeln des jeweiligen Anbieters, nicht die dieser Seite. Schriftarten werden aus den eigenen Dateien dieser Seite geladen; es erfolgen keine Anfragen an externe Schriftanbieter.",
     "privacy.s3t": "Was diese Seite nicht tut",
@@ -483,6 +502,18 @@ const DICTS = {
     "addr.pickName": "Namen wählen",
     "reader.delete": "Löschen",
     "reader.backToList": "Nachrichten",
+    "notify.blocked": "Hinweise blockiert",
+    "status.sessionLost": "Sitzung verloren - neue Adresse holen",
+    "status.attFail": "Anhang konnte nicht gespeichert werden: {error}",
+    "addr.copyFail": "Fehlgeschlagen",
+    "addr.domain": "Domain",
+    "addr.publicWarn": "Guerrilla-Postfächer sind öffentlich: Wer diesen Namen eingibt, kann die Mails lesen.",
+    "link.title": "Bestätigungslink",
+    "link.open": "Link öffnen",
+    "reader.frameTitle": "Nachrichteninhalt",
+    "confirm.burn": "Diese Adresse und ihre {n} Nachrichten vernichten? Das lässt sich nicht rückgängig machen.",
+    "history.label": "Zuletzt",
+    "list.unread": "Ungelesen",
   },
 
   es: {
@@ -496,8 +527,8 @@ const DICTS = {
     "status.liveNoMail": "En vivo - sin correo aún",
     "status.liveUnread": "En vivo - {n} sin leer",
     "status.syncing": "Comprobando correo",
-    "status.error": "Error de conexión",
-    "status.createFail": "Falló la solicitud de dirección",
+    "status.error": "Error de conexión: {error}",
+    "status.createFail": "Falló la solicitud de dirección: {error}",
 
     "meta.session": "{provider} - sesión ok",
     "meta.opening": "abriendo sesión",
@@ -511,12 +542,10 @@ const DICTS = {
     "expiry.expired": "Caducada - quémala y obtén otra",
 
     "toolbar.refresh": "Actualizar",
-    "toolbar.refreshing": "Comprobando",
     "toolbar.new": "Nueva dirección",
     "toolbar.burn": "Quemarla",
     "toolbar.source": "Fuente",
     "toolbar.poll": "sondeo automático {n}s",
-    "toolbar.syncing": "sincronizando",
 
     "list.header": "Remitente / asunto",
     "list.held": "{n} retenidos",
@@ -616,7 +645,7 @@ const DICTS = {
     "privacy.title": "Privacidad",
     "privacy.intro": "Tempmail es una página estática. No tiene backend propio, base de datos ni cuentas de usuario. Este documento describe lo que la página hace y no hace con los datos. Última actualización: 2026-08-28.",
     "privacy.s1t": "Qué permanece en tu navegador",
-    "privacy.s1b": "Tu dirección temporal actual, el token de sesión del proveedor y tus preferencias de idioma y tema se guardan en el almacenamiento local de este navegador. Nunca salen de tu dispositivo a través de esta página. Al borrar los datos del sitio o pulsar «Quemarla», se eliminan.",
+    "privacy.s1b": "Tu dirección temporal actual, hasta cinco direcciones recientes, sus tokens de sesión, qué mensajes abriste y tus preferencias de idioma, tema, duración y avisos se guardan en el almacenamiento local de este navegador. Nunca salen de tu dispositivo a través de esta página. «Quemarla» elimina la dirección actual, las recientes se eliminan cuando vence su duración y al borrar los datos del sitio se elimina todo.",
     "privacy.s2t": "Qué se envía a terceros",
     "privacy.s2b": "Tu navegador obtiene el correo directamente del proveedor de correo desechable que selecciones, Mail.gw o Guerrilla Mail. Estas solicitudes envían tu dirección IP y los encabezados del navegador a dicho proveedor, y el proveedor almacena los mensajes enviados a tu dirección. A esos datos se aplican las políticas de privacidad y las reglas de conservación del proveedor, no las de esta página. Las fuentes se sirven desde los propios archivos de esta página, sin realizar solicitudes a proveedores externos de fuentes.",
     "privacy.s3t": "Qué no hace esta página",
@@ -644,6 +673,18 @@ const DICTS = {
     "addr.pickName": "Elige un nombre",
     "reader.delete": "Eliminar",
     "reader.backToList": "Mensajes",
+    "notify.blocked": "Avisos bloqueados",
+    "status.sessionLost": "Sesión perdida - obtén una dirección nueva",
+    "status.attFail": "No se pudo guardar el adjunto: {error}",
+    "addr.copyFail": "Error al copiar",
+    "addr.domain": "Dominio",
+    "addr.publicWarn": "Los buzones de Guerrilla son públicos: cualquiera que escriba este nombre puede leer su correo.",
+    "link.title": "Enlace de confirmación",
+    "link.open": "Abrir enlace",
+    "reader.frameTitle": "Cuerpo del mensaje",
+    "confirm.burn": "¿Quemar esta dirección y sus {n} mensajes? No se puede deshacer.",
+    "history.label": "Recientes",
+    "list.unread": "No leído",
   },
 };
 
@@ -690,7 +731,7 @@ export function onLangChange(fn) {
   listeners.add(fn);
 }
 
-/** Fill elements that carry data-i18n / data-i18n-title / data-i18n-ph. */
+/** Fill elements that carry data-i18n / data-i18n-title / data-i18n-ph / data-i18n-aria. */
 export function applyStaticTranslations(root = document) {
   root.querySelectorAll("[data-i18n]").forEach((el) => {
     el.textContent = t(el.dataset.i18n);
@@ -700,6 +741,9 @@ export function applyStaticTranslations(root = document) {
   });
   root.querySelectorAll("[data-i18n-ph]").forEach((el) => {
     el.placeholder = t(el.dataset.i18nPh);
+  });
+  root.querySelectorAll("[data-i18n-aria]").forEach((el) => {
+    el.setAttribute("aria-label", t(el.dataset.i18nAria));
   });
 }
 
