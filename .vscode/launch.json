@@ -1,0 +1,47 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: uvicorn",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--port", "8000"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/bin/python",
+      "windows": { "python": "${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe" }
+    },
+    {
+      "name": "Site: Chrome",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:8000/",
+      "webRoot": "${workspaceFolder}/docs",
+      "preLaunchTask": "Serve site (8000)"
+    },
+    {
+      "name": "Site: Edge",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://127.0.0.1:8000/",
+      "webRoot": "${workspaceFolder}/docs",
+      "preLaunchTask": "Serve site (8000)"
+    },
+    {
+      "name": "Unit tests: all",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeArgs": ["--test", "tests/unit/*.test.mjs"],
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "Unit tests: current file",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "runtimeArgs": ["--test", "${file}"],
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}
