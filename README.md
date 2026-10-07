@@ -44,15 +44,22 @@ own database. To control retention yourself you need a self-hosted catch-all SMT
 server (see below). Each provider module declares its `retention` string, shown in
 the UI.
 
-Real-time is short polling (Mail.gw every 4 s, Guerrilla every 8 s), paused while
-the tab is hidden. The inbox (address + session token) is kept in `localStorage`
-so a refresh keeps your mail.
+Real-time is short polling (Mail.gw every 4 s, Guerrilla every 8 s). A hidden tab
+keeps polling (every 15 s or slower) only while alerts are on - that is when someone
+is waiting in another tab for the notification. Every request has a 15 s timeout,
+and polling backs off to 20 s while a provider answers HTTP 429. The inbox (address
++ session) is kept in `localStorage`, so a refresh keeps your mail; only a session
+the provider rejects is thrown away - being offline or rate-limited on reload keeps
+the address and retries. A rejected Mail.gw token is renewed with the stored
+account password before giving up.
 
 Adding a provider = one file in [`docs/js/providers/`](docs/js/providers/) exporting
-`{ id, label, pollInterval, retention, retentionSeconds, createInbox(opts),
-listMessages, getMessage, destroy }` plus optional `domains()`,
-`deleteMessage(session, id)`, `downloadAttachment(session, att)`; then list it in
-`providers/index.js`.
+`{ id, label, pollInterval, retention, retentionKey, retentionSeconds,
+createInbox(opts), listMessages, getMessage, destroy }` plus optional `domains()`,
+`deleteMessage(session, id)`, `downloadAttachment(session, att)`, `reauth(session)`
+and `publicInboxes: true` (no password - shows a warning when picking a name); then
+list it in `providers/index.js`. Throw errors made with `httpError(status, msg)`
+from `common.js`, so 401 / 403 (session lost) and 429 (rate limit) are told apart.
 
 ---
 
@@ -65,27 +72,44 @@ then a message-list / reader split.
 
 * **Fonts** - self-hosted woff2 in [`docs/fonts/`](docs/fonts/) via
   [`docs/css/fonts.css`](docs/css/fonts.css); no request to Google.
-* **Theme** ([`docs/js/theme.js`](docs/js/theme.js)) - two buttons, **Light** /
-  **Dark**. First visit follows the OS setting; the choice is then stored and
+* **Theme** ([`docs/js/theme.js`](docs/js/theme.js)) - one toggle button,
+  light / dark. First visit follows the OS setting; the choice is then stored and
   applied as `data-theme` on `<html>` before first paint. Both palettes are full
   token sets under `:root[data-theme="..."]` in [`docs/css/style.css`](docs/css/style.css).
 * **Languages** ([`docs/js/i18n.js`](docs/js/i18n.js)) - `en`, `lv`, `de`, `es`
-  (100 keys each). Static text uses `data-i18n` / `data-i18n-title`; dynamic
-  strings go through `t(key, vars)`.
+  (151 keys each). Static text uses `data-i18n` / `data-i18n-title` /
+  `data-i18n-aria`; dynamic strings go through `t(key, vars)`.
 * **Tabs**: **Inbox** and **What is temp mail** (about + FAQ accordion).
-* **Features**: verification-code detection (scans plain text *and* HTML bodies,
-  shows the OTP in a copy box); attachment chips with download (Mail.gw);
-  per-message delete; pick-your-own address name (**Edit**); desktop notifications;
-  polling backs off to 20 s when a provider returns HTTP 429; `aria-live` status.
-* **Lifetime** - a selector (10 min / 30 min / 1 h / Max, default **1 h**). The
-  countdown runs to that; at zero the address freezes, polling stops and the
-  session token is dropped. "Max" = the provider's own retention (Mail.gw 7 d,
-  Guerrilla 1 h). This is a client-side lifetime; the provider still holds already
-  received mail for its own retention window.
+* **Features**:
+  * verification **code** and **confirmation link** detection
+    ([`docs/js/lib/detect.js`](docs/js/lib/detect.js)) on plain-text *and* HTML
+    bodies. Codes are scored (near a keyword in en / lv / de / es, own line,
+    6 digits); years, prices, dates, order numbers, phone numbers and URLs are
+    skipped. The link box shows the target host before you open it;
+  * attachment download (Mail.gw, backend providers); per-message delete;
+  * pick-your-own address name (**Edit**) - a taken name keeps the current
+    address and reopens the form;
+  * **Recent** - up to five earlier addresses of this browser, switchable while
+    their lifetime runs;
+  * desktop alerts with an on / off toggle (clicking an alert opens the mail);
+    unread count in the tab title; read state survives a reload;
+  * **Burn it** asks first when the inbox holds mail.
+* **Accessibility**: message rows are buttons (arrow keys / Home / End move
+  between them), ARIA tab pattern for the tabs, the `aria-live` status only
+  changes when its text does (no announcement on every poll), expiry bar is a
+  `progressbar`, the mail frame has a title.
+* **Lifetime** - a selector (10 min / 30 min / 1 h / Max, default **1 h**) for the
+  current address. The countdown runs to that; at zero the address freezes,
+  polling stops and the account is deleted upstream (Mail.gw; Guerrilla mail
+  expires on its own after 1 h). An expired address stays expired - a new choice
+  then applies to the next address. "Max" = the provider's own retention
+  (Mail.gw 7 d, Guerrilla 1 h).
+* **Installable**: [`docs/manifest.webmanifest`](docs/manifest.webmanifest) + icons.
 * **Security**: page CSP (`script-src 'self'`, `connect-src` limited to the two
-  mail APIs), `referrer: no-referrer`, and a per-frame CSP on rendered HTML mail
-  that blocks remote images / scripts / fonts. No external requests at all
-  (fonts self-hosted).
+  mail APIs and the page's own origin for the optional backend),
+  `referrer: no-referrer`, and a per-frame CSP on rendered HTML mail that blocks
+  remote images / scripts / fonts. No external requests at all (fonts
+  self-hosted).
 
 ---
 
@@ -97,7 +121,8 @@ then a message-list / reader split.
    - Branch: **main**, folder: **`/docs`**
 3. Save. The site publishes at `https://<user>.github.io/<repo>/`.
 
-No build step, no GitHub Actions. `docs/.nojekyll` disables Jekyll processing.
+No build step: Pages serves `docs/` as is. GitHub Actions only runs the checks
+below. `docs/.nojekyll` disables Jekyll processing.
 
 ---
 
@@ -107,17 +132,20 @@ The static client uses ES modules, so it needs to be served over HTTP (not
 `file://`). Either:
 
 ```bash
-# plain static server
+# plain static server (either one)
+node scripts/serve.mjs --port 8000
 cd docs && python -m http.server 8000
 ```
 
-or run the backend, which serves `docs/` at the web root **and** exposes a proxy
-API (so Mail.tm works locally too):
+or run the backend (Python 3.11+), which serves `docs/` at the web root **and**
+exposes a proxy API. The page asks `/api/providers` on load and adds the
+providers the browser can't reach directly - so **Mail.tm (proxy)** shows up in
+the Source list:
 
 ```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\activate            # PowerShell: .venv\Scripts\Activate.ps1
+source .venv/bin/activate         # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
@@ -126,29 +154,63 @@ Open <http://localhost:8000>.
 
 ---
 
+## Tests
+
+```bash
+npm test                  # unit tests (node:test): code / link detection, helpers
+npm run check:i18n        # key parity, every referenced key exists, no unused keys
+npm ci && npx playwright install chromium
+npm run test:e2e          # Playwright, Mail.gw / Guerrilla faked with page.route()
+
+cd backend
+pip install -r requirements-dev.txt
+pytest -q                 # API tests, upstream faked with httpx.MockTransport
+ruff check . && ruff format --check .
+```
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of them. The
+e2e tests never call the real mail services.
+
+---
+
 ## Structure
 
 ```
 docs/                     <- GitHub Pages site (the product)
-  index.html
+  index.html, terms.html, privacy.html
+  manifest.webmanifest, icons/
   css/style.css           design tokens in :root - iterate here
+  css/fonts.css, fonts/   self-hosted Inter + Geist Mono
   js/
-    app.js                state, polling, rendering, OTP + attachments
+    app.js                state, polling, rendering, history, alerts
     i18n.js               translations (en / lv / de / es)
-    theme.js              light / dark toggle
+    theme.js              light / dark toggle (theme-init.js runs before paint)
+    legal.js              bootstrap for the Terms / Privacy pages
+    lib/
+      detect.js           one-time code + confirmation link detection
+      format.js           escaping, sizes
     providers/
-      common.js           shared helpers
-      mailgw.js            Mail.gw
-      guerrilla.js         Guerrilla Mail
-      index.js             provider registry
+      common.js           fetch with timeout, typed errors, shared helpers
+      mailgw.js           Mail.gw
+      guerrilla.js        Guerrilla Mail
+      backend.js          providers proxied by the optional backend (/api)
+      index.js            provider registry
   .nojekyll
+
+tests/
+  unit/                   node:test unit tests
+  e2e/                    Playwright tests + fake mail APIs
+scripts/
+  check-i18n.mjs          i18n checks (CI)
+  serve.mjs               static server for docs/ (dev + e2e)
 
 backend/                  <- optional FastAPI app (local dev / future SMTP host)
   app/
     main.py               REST + SSE proxy, serves docs/
     providers/            server-side provider impls (incl. mail.tm)
-    store.py              in-memory inbox store with TTL
-  requirements.txt
+    store.py              in-memory inbox store with TTL, rate limiter
+  tests/                  pytest
+  requirements.txt, requirements-dev.txt
 ```
 
 ---
@@ -157,12 +219,22 @@ backend/                  <- optional FastAPI app (local dev / future SMTP host)
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET`    | `/api/providers` | available providers |
-| `POST`   | `/api/inboxes` | create address; body: `{"provider": "mailtm"}` (optional) |
+| `GET`    | `/api/providers` | available providers (name, label, retention, public inboxes) |
+| `GET`    | `/api/providers/{name}/domains` | domains you can pick |
+| `POST`   | `/api/inboxes` | create address; body (all optional): `{"provider": "mailtm", "local_part": "jane", "domain": "..."}` |
+| `GET`    | `/api/inboxes/{id}` | inbox info |
 | `GET`    | `/api/inboxes/{id}/messages` | list messages |
-| `GET`    | `/api/inboxes/{id}/messages/{mid}` | full message |
-| `GET`    | `/api/inboxes/{id}/events` | SSE stream |
+| `GET`    | `/api/inboxes/{id}/messages/{mid}` | full message incl. attachment list |
+| `DELETE` | `/api/inboxes/{id}/messages/{mid}` | delete a message |
+| `GET`    | `/api/inboxes/{id}/messages/{mid}/attachments/{aid}` | download (always `Content-Disposition: attachment`) |
+| `GET`    | `/api/inboxes/{id}/events` | SSE stream (`ready`, `message`, `ping`, `error`; `gone` and end when the inbox is deleted / expires) |
 | `DELETE` | `/api/inboxes/{id}` | delete inbox |
+
+Errors: `404` unknown / expired inbox, `409` name taken, `410` upstream session
+gone, `429` too many new inboxes from one IP (`CREATE_LIMIT_PER_MINUTE`, default
+10), `503` inbox limit reached (`MAX_INBOXES`, default 500), `502` upstream
+failure. Inboxes live in memory and are forgotten after `INBOX_TTL_SECONDS`
+without a request. See [`backend/.env.example`](backend/.env.example).
 
 ---
 
@@ -192,8 +264,8 @@ a domain whose nameservers are on Cloudflare.
 
 ## Limitations / TODO
 
-* No attachment download.
 * Free upstreams are rate-limited (Mail.gw ~30 req/min per IP).
-* Guerrilla API no longer allows domain switching.
-* `localStorage` inbox is per-browser; nothing is synced.
-* Design.
+* Guerrilla API no longer allows domain switching, and its inboxes are public.
+* `localStorage` inboxes are per-browser; nothing is synced.
+* No service worker: no offline mode, and browsers that only allow notifications
+  from a service worker (Chrome on Android) show no alerts.
