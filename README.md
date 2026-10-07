@@ -1,5 +1,7 @@
 # temp-mail
 
+**[Open the app](https://artuursg.github.io/temp-mail/)** - https://artuursg.github.io/temp-mail/
+
 Disposable / temporary email addresses - like [mail.cx](https://mail.cx),
 [temp-mail.org](https://temp-mail.org), [temp-mail.io](https://temp-mail.io).
 
